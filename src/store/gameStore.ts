@@ -1,6 +1,83 @@
 import { create } from 'zustand'
-import { EquipmentInstance, ScreenType, EnhancementResult } from '../types'
+import {
+  EquipmentInstance, ScreenType, EnhancementResult, Commission,
+  Adventurer, Region, ExpeditionResult, Retainer, TroopSlot, WaveResult,
+  STAT_GRADE_VALUE, TROOP_TYPE_NAMES, StatGrade, CharacterClass,
+} from '../types'
 import { STARTING_EQUIPMENT } from '../data/startingEquipment'
+import { STARTING_ADVENTURERS } from '../data/adventurers'
+import { STARTING_REGIONS } from '../data/regions'
+import { STARTING_RETAINERS, STARTING_TROOP_SLOTS } from '../data/retainers'
+import { generateCommissions } from '../systems/commissionSystem'
+import {
+  resolveExpedition, calculateReturnTurn, generateNewAdventurer,
+  generateRewardEquipment, calcInjuryDuration,
+} from '../systems/guildSystem'
+
+
+// ===== 왕국 파견 요청 후보 생성 =====
+const KINGDOM_CANDIDATE_NAMES = [
+  '용감한 고도', '강인한 박서현', '냉철한 이준', '날렵한 최아름', '충직한 정우성',
+  '독한 오민재', '지략가 강혜린', '흔들림없는 한동현', '단호한 신지연', '영리한 윤태오',
+  '강철의 임수빈', '전장의 남궁철', '매서운 백현우', '끈질긴 조성민', '예리한 황다은',
+]
+
+const CANDIDATE_CLASSES: CharacterClass[] = [
+  'knight', 'swordsman', 'archer', 'spearman', 'mage', 'priest', 'rogue',
+]
+
+const GRADE_POOL: StatGrade[] = ['E', 'D', 'C', 'B', 'A']
+const GRADE_WEIGHTS =                [5,   15,  40,  30,  10]
+
+function weightedGrade(): StatGrade {
+  const total = GRADE_WEIGHTS.reduce((a, b) => a + b, 0)
+  let r = Math.random() * total
+  for (let i = 0; i < GRADE_POOL.length; i++) {
+    r -= GRADE_WEIGHTS[i]
+    if (r <= 0) return GRADE_POOL[i]
+  }
+  return 'C'
+}
+
+function generateKingdomCandidate(idx: number): Retainer {
+  const name = KINGDOM_CANDIDATE_NAMES[Math.floor(Math.random() * KINGDOM_CANDIDATE_NAMES.length)]
+  const cls = CANDIDATE_CLASSES[Math.floor(Math.random() * CANDIDATE_CLASSES.length)]
+  const salaryBase: Record<string, number> = {
+    knight: 80, swordsman: 60, archer: 65, spearman: 55, mage: 90, priest: 75, rogue: 50,
+  }
+  return {
+    id: `cand_${Date.now()}_${idx}`,
+    name,
+    characterClass: cls,
+    stats: {
+      proficiency: weightedGrade(),
+      judgment:    weightedGrade(),
+      vitality:    weightedGrade(),
+      courage:     weightedGrade(),
+    },
+    loyalty: 60 + Math.floor(Math.random() * 20),
+    salary: (salaryBase[cls] ?? 60) + Math.floor(Math.random() * 3) * 10,
+    equippedWeaponId: null,
+    equippedArmorId: null,
+    isActive: true,
+    quirk: '',
+  }
+}
+
+// ===== 웨이브 전투력 계산 =====
+function calcTroopPower(slot: TroopSlot, retainers: Retainer[]): number {
+  if (!slot.commanderId) return 8 // 지휘관 없는 기본 전력
+  const commander = retainers.find(r => r.id === slot.commanderId)
+  if (!commander) return 8
+  const prof = STAT_GRADE_VALUE[commander.stats.proficiency] ?? 1
+  const cour = STAT_GRADE_VALUE[commander.stats.courage] ?? 1
+  return prof * 15 + cour * 10 + 20 // 지휘관 보너스
+}
+
+function calcEnemyStrength(waveNumber: number): number {
+  // 1웨이브: 80, 이후 +40씩 증가
+  return 60 + waveNumber * 40
+}
 
 interface GameState {
   // ===== 화면 =====
@@ -8,15 +85,15 @@ interface GameState {
   setScreen: (screen: ScreenType) => void
 
   // ===== 턴 시스템 =====
-  turn: number          // 전체 턴 수
-  week: number          // 1~4
+  turn: number
+  week: number
   month: number
   year: number
   advanceTurn: () => void
 
   // ===== 자원 =====
   gold: number
-  divineRank: number    // 0~100
+  divineRank: number
   divinePower: number
   maxDivinePower: number
   addGold: (amount: number) => void
@@ -33,9 +110,56 @@ interface GameState {
   removeEquipment: (id: string) => void
   addEquipment: (item: EquipmentInstance) => void
 
-  // ===== 강화 결과 (팝업용) =====
+  // ===== 강화 결과 팝업 =====
   lastEnhancementResult: EnhancementResult | null
   setLastEnhancementResult: (result: EnhancementResult | null) => void
+
+  // ===== 의뢰 시스템 =====
+  commissions: Commission[]
+  commissionEquipmentId: string | null
+  setCommissions: (commissions: Commission[]) => void
+  acceptCommission: (id: string) => void
+  completeCommission: (id: string, success: boolean) => void
+  setCommissionEquipment: (id: string | null) => void
+
+  // ===== 모험가 길드 =====
+  adventurers: Adventurer[]
+  regions: Region[]
+  pendingExpeditionResult: ExpeditionResult | null
+  nextRecruitTurn: number
+  dispatchExpedition: (regionId: string, partyIds: string[], lentEquipmentId: string | null) => void
+
+  // ===== 왕국 파견 요청 (가신 영입) =====
+  lastKingdomRequestMonth: number
+  kingdomCandidates: Retainer[]
+  requestKingdomDispatch: () => boolean
+  recruitCandidate: (retainerId: string) => void
+  dismissKingdomCandidates: () => void
+  receiveExpeditionResult: (regionId: string) => void
+  clearExpeditionResult: () => void
+
+  // ===== 영지 가신단 =====
+  retainers: Retainer[]
+  troopSlots: TroopSlot[]
+  equipWeapon: (retainerId: string, equipmentId: string | null) => void
+  equipArmor: (retainerId: string, equipmentId: string | null) => void
+  assignCommander: (troopSlotId: string, retainerId: string | null) => void
+  updateRetainer: (updated: Retainer) => void
+
+  // ===== 영지 경제 =====
+  baseTerritoryIncome: number
+  waveDefenseBonus: number
+  lastMonthlyReport: string | null
+  clearMonthlyReport: () => void
+  addWaveDefenseBonus: (amount: number) => void
+
+  // ===== 웨이브 시스템 =====
+  nextWaveTurn: number
+  waveNumber: number       // 처리된 웨이브 수
+  pendingWaveEvent: boolean
+  waveResult: WaveResult | null
+  resolveWave: () => void
+  clearWaveResult: () => void
 
   // ===== 게임 상태 =====
   isGameOver: boolean
@@ -53,10 +177,7 @@ const calcDate = (turn: number) => ({
 
 const initialState = {
   currentScreen: 'title' as ScreenType,
-  turn: 1,
-  week: 1,
-  month: 1,
-  year: 1,
+  turn: 1, week: 1, month: 1, year: 1,
   gold: 500,
   divineRank: 10,
   divinePower: 50,
@@ -64,6 +185,23 @@ const initialState = {
   equipment: [...STARTING_EQUIPMENT],
   selectedEquipmentId: null,
   lastEnhancementResult: null,
+  commissions: [] as Commission[],
+  commissionEquipmentId: null,
+  adventurers: [...STARTING_ADVENTURERS],
+  regions: STARTING_REGIONS.map(r => ({ ...r })),
+  pendingExpeditionResult: null,
+  nextRecruitTurn: 4,
+  lastKingdomRequestMonth: 0,
+  kingdomCandidates: [] as Retainer[],
+  retainers: [...STARTING_RETAINERS],
+  troopSlots: [...STARTING_TROOP_SLOTS],
+  baseTerritoryIncome: 150,
+  waveDefenseBonus: 0,
+  lastMonthlyReport: null,
+  nextWaveTurn: 24,
+  waveNumber: 0,
+  pendingWaveEvent: false,
+  waveResult: null as WaveResult | null,
   isGameOver: false,
   isClear: false,
 }
@@ -74,24 +212,82 @@ export const useGameStore = create<GameState>((set, get) => ({
   setScreen: (screen) => set({ currentScreen: screen }),
 
   advanceTurn: () => {
-    const nextTurn = get().turn + 1
+    const state = get()
+    const nextTurn = state.turn + 1
     const date = calcDate(nextTurn)
-    // 매 턴 신성력 소폭 회복
-    const newDivinePower = Math.min(
-      get().divinePower + 5,
-      get().maxDivinePower
-    )
-    // 강화 잠금 턴 감소
-    const updatedEquipment = get().equipment.map((eq) =>
+    const newDivinePower = Math.min(state.divinePower + 5, state.maxDivinePower)
+
+    const updatedEquipment = state.equipment.map((eq) =>
       eq.enhancementLockTurns > 0
         ? { ...eq, enhancementLockTurns: eq.enhancementLockTurns - 1 }
         : eq
     )
+
+    const updatedAdventurers = state.adventurers.map((a) => {
+      if (a.status === 'injured' && a.injuredUntilTurn !== null && a.injuredUntilTurn <= nextTurn) {
+        return { ...a, status: 'available' as const, injuredUntilTurn: null }
+      }
+      return a
+    })
+
+    let finalAdventurers = updatedAdventurers
+    let nextRecruitTurn = state.nextRecruitTurn
+    if (nextTurn >= state.nextRecruitTurn) {
+      finalAdventurers = [...updatedAdventurers, generateNewAdventurer()]
+      nextRecruitTurn = nextTurn + 3 + Math.floor(Math.random() * 5)
+    }
+
+    const newCommissions = generateCommissions(state.divineRank, nextTurn)
+
+    // 월 결산 (4턴 = 1개월)
+    let updatedRetainers = state.retainers
+    let monthlyReport: string | null = null
+    let goldAfterMonth = state.gold
+
+    if (nextTurn % 4 === 0) {
+      const liberatedIncome = state.regions
+        .filter(r => r.status === 'liberated')
+        .reduce((sum, r) => sum + r.liberationMonthlyIncome, 0)
+      const totalIncome = state.baseTerritoryIncome + state.waveDefenseBonus + liberatedIncome
+      const totalSalary = state.retainers
+        .filter(r => r.isActive && r.salary > 0)
+        .reduce((sum, r) => sum + r.salary, 0)
+
+      goldAfterMonth = state.gold + totalIncome
+
+      if (goldAfterMonth >= totalSalary) {
+        goldAfterMonth -= totalSalary
+        updatedRetainers = state.retainers.map(r =>
+          r.isActive && r.salary > 0
+            ? { ...r, loyalty: Math.min(100, r.loyalty + 2) }
+            : r
+        )
+        monthlyReport = `📅 월 결산: 수입 +${totalIncome}G / 봉급 -${totalSalary}G / 순이익 +${totalIncome - totalSalary}G`
+      } else {
+        updatedRetainers = state.retainers.map(r => {
+          if (!r.isActive || r.salary <= 0) return r
+          const newLoyalty = Math.max(0, r.loyalty - 15)
+          return { ...r, loyalty: newLoyalty, isActive: newLoyalty > 0 }
+        })
+        monthlyReport = `⚠️ 봉급 미지급! 수입 +${totalIncome}G — 봉급 ${totalSalary}G 부족. 가신들의 충성도가 하락했습니다.`
+      }
+    }
+
+    // 웨이브 체크
+    const pendingWaveEvent = nextTurn >= state.nextWaveTurn && !state.pendingWaveEvent
+
     set({
-      turn: nextTurn,
-      ...date,
+      turn: nextTurn, ...date,
       divinePower: newDivinePower,
       equipment: updatedEquipment,
+      adventurers: finalAdventurers,
+      nextRecruitTurn,
+      commissions: newCommissions,
+      commissionEquipmentId: null,
+      retainers: updatedRetainers,
+      gold: goldAfterMonth,
+      lastMonthlyReport: monthlyReport,
+      pendingWaveEvent: pendingWaveEvent ? true : state.pendingWaveEvent,
     })
   },
 
@@ -101,50 +297,266 @@ export const useGameStore = create<GameState>((set, get) => ({
     set((s) => ({ gold: s.gold - amount }))
     return true
   },
-
   addDivinePower: (amount) =>
-    set((s) => ({
-      divinePower: Math.min(s.divinePower + amount, s.maxDivinePower),
-    })),
+    set((s) => ({ divinePower: Math.min(s.divinePower + amount, s.maxDivinePower) })),
   spendDivinePower: (amount) => {
     if (get().divinePower < amount) return false
     set((s) => ({ divinePower: s.divinePower - amount }))
     return true
   },
-
   adjustDivineRank: (delta) =>
-    set((s) => ({
-      divineRank: Math.max(0, Math.min(100, s.divineRank + delta)),
-    })),
+    set((s) => ({ divineRank: Math.max(0, Math.min(100, s.divineRank + delta)) })),
 
   selectEquipment: (id) => set({ selectedEquipmentId: id }),
-
   updateEquipment: (updated) =>
-    set((s) => ({
-      equipment: s.equipment.map((eq) =>
-        eq.id === updated.id ? updated : eq
-      ),
-    })),
-
+    set((s) => ({ equipment: s.equipment.map((eq) => (eq.id === updated.id ? updated : eq)) })),
   removeEquipment: (id) =>
     set((s) => ({
       equipment: s.equipment.filter((eq) => eq.id !== id),
+      selectedEquipmentId: s.selectedEquipmentId === id ? null : s.selectedEquipmentId,
+    })),
+  addEquipment: (item) => set((s) => ({ equipment: [...s.equipment, item] })),
+
+  setLastEnhancementResult: (result) => set({ lastEnhancementResult: result }),
+
+  setCommissions: (commissions) => set({ commissions }),
+  acceptCommission: (id) =>
+    set((s) => ({
+      commissions: s.commissions.map((c) => c.id === id ? { ...c, accepted: true } : c),
+    })),
+  completeCommission: (id, success) => {
+    const store = get()
+    const comm = store.commissions.find((c) => c.id === id)
+    if (!comm) return
+    if (success) {
+      store.addGold(comm.rewardGold)
+      store.addDivinePower(comm.rewardDivinePower)
+    }
+    set((s) => ({
+      commissions: s.commissions.map((c) => c.id === id ? { ...c, processed: true } : c),
+      equipment: s.equipment.filter((eq) => eq.id !== comm.equipment.id),
       selectedEquipmentId:
-        s.selectedEquipmentId === id ? null : s.selectedEquipmentId,
+        s.selectedEquipmentId === comm.equipment.id ? null : s.selectedEquipmentId,
+      commissionEquipmentId: null,
+    }))
+  },
+  setCommissionEquipment: (id) => set({ commissionEquipmentId: id }),
+
+  // ===== 길드 액션 =====
+  dispatchExpedition: (regionId, partyIds, lentEquipmentId) => {
+    const state = get()
+    const region = state.regions.find(r => r.id === regionId)
+    const party = state.adventurers.filter(a => partyIds.includes(a.id))
+    const lentEquipment = lentEquipmentId
+      ? state.equipment.find(eq => eq.id === lentEquipmentId) ?? null
+      : null
+    if (!region || party.length === 0) return
+
+    const returnsOnTurn = calculateReturnTurn(region, party, lentEquipment, state.turn)
+    set((s) => ({
+      regions: s.regions.map(r =>
+        r.id === regionId
+          ? { ...r, currentExpedition: { partyIds, lentEquipmentId, departedOnTurn: state.turn, returnsOnTurn } }
+          : r
+      ),
+      adventurers: s.adventurers.map(a =>
+        partyIds.includes(a.id)
+          ? { ...a, status: 'dispatched' as const, dispatchedRegionId: regionId, lentEquipmentId }
+          : a
+      ),
+    }))
+  },
+
+  receiveExpeditionResult: (regionId) => {
+    const state = get()
+    const region = state.regions.find(r => r.id === regionId)
+    if (!region?.currentExpedition) return
+
+    const expedition = region.currentExpedition
+    const party = state.adventurers.filter(a => expedition.partyIds.includes(a.id))
+    const lentEquipment = expedition.lentEquipmentId
+      ? state.equipment.find(eq => eq.id === expedition.lentEquipmentId) ?? null
+      : null
+
+    const baseResult = resolveExpedition(region, expedition, party, lentEquipment)
+    if (baseResult.goldEarned > 0) get().addGold(baseResult.goldEarned)
+    if (baseResult.divinePowerEarned > 0) get().addDivinePower(baseResult.divinePowerEarned)
+
+    const newProgress = Math.min(100, region.liberationProgress + baseResult.liberationGain)
+    const newStatus = newProgress >= 100 ? 'liberated' as const : region.status
+    const justLiberated = newStatus === 'liberated' && region.status !== 'liberated'
+
+    const liberationRewardEquipment: EquipmentInstance[] = []
+    if (justLiberated) {
+      for (let i = 0; i < region.liberationEquipmentCount; i++) {
+        const grades = region.rewardEquipmentGrades
+        liberationRewardEquipment.push(
+          generateRewardEquipment(grades[Math.floor(Math.random() * grades.length)])
+        )
+      }
+    }
+
+    set((s) => {
+      let newEquipment = baseResult.equipmentEarned
+        ? [...s.equipment.filter(eq => eq.id !== baseResult.lostEquipmentId), baseResult.equipmentEarned]
+        : s.equipment.filter(eq => eq.id !== baseResult.lostEquipmentId)
+      if (liberationRewardEquipment.length > 0) newEquipment = [...newEquipment, ...liberationRewardEquipment]
+
+      return {
+        regions: s.regions.map(r =>
+          r.id === regionId
+            ? { ...r, liberationProgress: newProgress, status: newStatus, currentExpedition: null }
+            : r
+        ),
+        equipment: newEquipment,
+        adventurers: s.adventurers.map(a => {
+          if (!expedition.partyIds.includes(a.id)) return a
+          const isInjured = baseResult.injuredAdventurerIds.includes(a.id)
+          return {
+            ...a,
+            status: isInjured ? ('injured' as const) : ('available' as const),
+            injuredUntilTurn: isInjured ? s.turn + calcInjuryDuration(a.stats) : null,
+            dispatchedRegionId: null,
+            lentEquipmentId: null,
+          }
+        }),
+        pendingExpeditionResult: { ...baseResult, justLiberated, liberationRewardEquipment },
+      }
+    })
+  },
+
+  clearExpeditionResult: () => set({ pendingExpeditionResult: null }),
+
+  // ===== 가신 장비 =====
+  equipWeapon: (retainerId, equipmentId) =>
+    set((s) => ({
+      retainers: s.retainers.map(r =>
+        r.id === retainerId ? { ...r, equippedWeaponId: equipmentId } : r
+      ),
     })),
 
-  addEquipment: (item) =>
-    set((s) => ({ equipment: [...s.equipment, item] })),
+  equipArmor: (retainerId, equipmentId) =>
+    set((s) => ({
+      retainers: s.retainers.map(r =>
+        r.id === retainerId ? { ...r, equippedArmorId: equipmentId } : r
+      ),
+    })),
 
-  setLastEnhancementResult: (result) =>
-    set({ lastEnhancementResult: result }),
+  // ===== 병력 슬롯 지휘관 배치 =====
+  assignCommander: (troopSlotId, retainerId) =>
+    set((s) => ({
+      troopSlots: s.troopSlots.map(t =>
+        t.id === troopSlotId ? { ...t, commanderId: retainerId } : t
+      ),
+    })),
+
+  updateRetainer: (updated) =>
+    set((s) => ({
+      retainers: s.retainers.map(r => r.id === updated.id ? updated : r),
+    })),
+
+  // ===== 영지 경제 =====
+  clearMonthlyReport: () => set({ lastMonthlyReport: null }),
+  addWaveDefenseBonus: (amount) =>
+    set((s) => ({ waveDefenseBonus: s.waveDefenseBonus + amount })),
+
+  // ===== 웨이브 해결 =====
+  resolveWave: () => {
+    const state = get()
+    const waveNumber = state.waveNumber + 1
+    const enemyStrength = calcEnemyStrength(waveNumber)
+
+    // 전투력 계산
+    const combatDetails = state.troopSlots.map(slot => {
+      const commander = slot.commanderId
+        ? state.retainers.find(r => r.id === slot.commanderId) ?? null
+        : null
+      const power = calcTroopPower(slot, state.retainers)
+      return {
+        troopId: slot.id,
+        troopType: TROOP_TYPE_NAMES[slot.troopType],
+        commanderName: commander ? commander.name : null,
+        power,
+      }
+    })
+    const defensePower = combatDetails.reduce((sum, d) => sum + d.power, 0)
+
+    const outcome = defensePower >= enemyStrength ? 'victory' as const : 'defeat' as const
+    let goldChange = 0
+    let divineRankChange = 0
+    let waveDefenseBonusGained = 0
+
+    if (outcome === 'victory') {
+      waveDefenseBonusGained = 30
+      goldChange = 50 + waveNumber * 20
+      divineRankChange = 2
+    } else {
+      goldChange = -(100 + waveNumber * 30)
+      divineRankChange = -5
+    }
+
+    // 다음 웨이브 타이밍 (16턴 간격, 점점 좁아짐)
+    const nextInterval = Math.max(8, 16 - waveNumber * 2)
+    const nextWaveTurn = state.nextWaveTurn + nextInterval
+
+    const result: WaveResult = {
+      waveNumber,
+      enemyStrength,
+      defensePower,
+      outcome,
+      goldChange,
+      divineRankChange,
+      waveDefenseBonusGained,
+      combatDetails,
+    }
+
+    set((s) => ({
+      waveNumber,
+      nextWaveTurn,
+      pendingWaveEvent: false,
+      waveResult: result,
+      gold: Math.max(0, s.gold + goldChange),
+      divineRank: Math.max(0, Math.min(100, s.divineRank + divineRankChange)),
+      waveDefenseBonus: s.waveDefenseBonus + waveDefenseBonusGained,
+    }))
+  },
+
+  clearWaveResult: () => set({ waveResult: null }),
+
+  // ===== 왕국 파견 요청 (가신 영입) =====
+  requestKingdomDispatch: () => {
+    const state = get()
+    const currentMonth = Math.floor((state.turn - 1) / 4) + 1
+    if (state.lastKingdomRequestMonth >= currentMonth) return false
+    const count = 2 + Math.floor(Math.random() * 4) // 2~5명
+    const candidates: Retainer[] = []
+    for (let i = 0; i < count; i++) {
+      candidates.push(generateKingdomCandidate(i))
+    }
+    set({ kingdomCandidates: candidates, lastKingdomRequestMonth: currentMonth })
+    return true
+  },
+
+  recruitCandidate: (retainerId) =>
+    set((s) => ({
+      retainers: [...s.retainers, ...s.kingdomCandidates.filter(c => c.id === retainerId)],
+      kingdomCandidates: [],
+    })),
+
+  dismissKingdomCandidates: () => set({ kingdomCandidates: [] }),
+
+
 
   triggerGameOver: () => set({ isGameOver: true }),
   triggerClear: () => set({ isClear: true }),
-
   resetGame: () =>
     set({
       ...initialState,
-      equipment: STARTING_EQUIPMENT.map((eq) => ({ ...eq })),
+      equipment: STARTING_EQUIPMENT.map(eq => ({ ...eq })),
+      adventurers: [...STARTING_ADVENTURERS],
+      regions: STARTING_REGIONS.map(r => ({ ...r })),
+      retainers: [...STARTING_RETAINERS],
+      troopSlots: [...STARTING_TROOP_SLOTS],
+      commissions: [],
     }),
 }))

@@ -1,4 +1,4 @@
-import { EquipmentInstance, EnhancementResult, PenaltyType, GradeConfig } from '../types'
+import { EquipmentInstance, EnhancementResult, PenaltyType, GradeConfig, MAX_FAILURES_BY_GRADE } from '../types'
 import { GRADE_CONFIGS } from '../data/gradeConfigs'
 
 // ===== 확률 계산 =====
@@ -11,10 +11,29 @@ export function getEnhancementProbability(
 
   const level = equipment.currentLevel
   const probs = config.probabilities
-  // 마지막 값 반복 적용 (무제한 등급용)
   const baseProbability = level < probs.length ? probs[level] : probs[probs.length - 1]
 
   return Math.min(100, baseProbability + divinePowerBoost)
+}
+
+// ===== 최대 실패 한도 확인 =====
+export function getMaxFailures(grade: string): number {
+  return MAX_FAILURES_BY_GRADE[grade as keyof typeof MAX_FAILURES_BY_GRADE] ?? 5
+}
+
+// ===== 강화 가능 여부 확인 =====
+export function canEnhance(equipment: EquipmentInstance): { ok: boolean; reason: string } {
+  if (equipment.currentLevel >= equipment.maxLevel) {
+    return { ok: false, reason: '최대 강화 달성' }
+  }
+  if (equipment.enhancementLockTurns > 0) {
+    return { ok: false, reason: `${equipment.enhancementLockTurns}턴 강화 잠금` }
+  }
+  const maxFail = getMaxFailures(equipment.grade)
+  if (equipment.failureCount >= maxFail) {
+    return { ok: false, reason: `실패 한도 초과 (${equipment.failureCount}/${maxFail}회)` }
+  }
+  return { ok: true, reason: '' }
 }
 
 // ===== 강화 시도 =====
@@ -27,24 +46,25 @@ export function attemptEnhancement(
 ): EnhancementResult {
   const probability = getEnhancementProbability(equipment, divinePowerBoost)
   const roll = Math.random() * 100
-
   const previousLevel = equipment.currentLevel
 
   if (roll < probability) {
     // ===== 성공 =====
-    const godComment = pickRandom(config.godComments.success)
+    // 실패 횟수는 총 누적이므로 성공해도 리셋하지 않음
     return {
       outcome: 'success',
       previousLevel,
       newLevel: previousLevel + 1,
       penaltyApplied: 'NONE',
       penaltyMagnitude: 0,
-      godComment,
+      godComment: pickRandom(config.godComments.success),
       probabilityUsed: probability,
+      newFailureCount: equipment.failureCount,
+      failureLocked: false,
     }
   }
 
-  // ===== 실패 - 페널티 계산 =====
+  // ===== 실패 =====
   const activePenalties = config.penalties.filter(
     (p) =>
       p.fromLevel <= previousLevel &&
@@ -56,27 +76,19 @@ export function attemptEnhancement(
   let newLevel = previousLevel
 
   for (const penaltyConfig of activePenalties) {
-    const penaltyRoll = Math.random() * 100
-    if (penaltyRoll >= penaltyConfig.triggerChance) continue
+    if (Math.random() * 100 >= penaltyConfig.triggerChance) continue
 
-    // 보호 아이템 처리
-    if (penaltyConfig.penaltyType === 'EQUIPMENT_DESTROY' && destroyProtection) {
-      continue
-    }
+    if (penaltyConfig.penaltyType === 'EQUIPMENT_DESTROY' && destroyProtection) continue
     if (
-      (penaltyConfig.penaltyType === 'LEVEL_DOWN' ||
-        penaltyConfig.penaltyType === 'LEVEL_RESET') &&
+      (penaltyConfig.penaltyType === 'LEVEL_DOWN' || penaltyConfig.penaltyType === 'LEVEL_RESET') &&
       levelDropProtection
-    ) {
-      continue
-    }
+    ) continue
 
     switch (penaltyConfig.penaltyType) {
       case 'EQUIPMENT_DESTROY':
         penaltyApplied = 'EQUIPMENT_DESTROY'
         penaltyMagnitude = 1
         break
-
       case 'LEVEL_DOWN':
         if (penaltyApplied !== 'EQUIPMENT_DESTROY') {
           penaltyApplied = 'LEVEL_DOWN'
@@ -84,7 +96,6 @@ export function attemptEnhancement(
           newLevel = Math.max(0, previousLevel - penaltyConfig.magnitude)
         }
         break
-
       case 'LEVEL_RESET':
         if (penaltyApplied !== 'EQUIPMENT_DESTROY') {
           penaltyApplied = 'LEVEL_RESET'
@@ -92,24 +103,23 @@ export function attemptEnhancement(
           newLevel = 0
         }
         break
-
       case 'DURABILITY_DAMAGE':
-        // 내구도 데미지는 별도로 처리 (여러 개 중복 가능)
         if (penaltyApplied !== 'EQUIPMENT_DESTROY') {
           penaltyMagnitude += penaltyConfig.magnitude
           if (penaltyApplied === 'NONE') penaltyApplied = 'DURABILITY_DAMAGE'
         }
         break
-
       default:
         break
     }
   }
 
   const isDestroyed = penaltyApplied === 'EQUIPMENT_DESTROY'
-  const godComment = isDestroyed
-    ? pickRandom(config.godComments.destroy)
-    : pickRandom(config.godComments.failure)
+
+  // 총 실패 횟수 증가 (성공 시 리셋 없음)
+  const maxFail = getMaxFailures(equipment.grade)
+  const newFailureCount = equipment.failureCount + 1
+  const failureLocked = newFailureCount >= maxFail  // 이번 실패로 한도 도달 → 영구 강화 불가
 
   return {
     outcome: isDestroyed ? 'destroy' : 'failure',
@@ -117,26 +127,35 @@ export function attemptEnhancement(
     newLevel,
     penaltyApplied,
     penaltyMagnitude,
-    godComment,
+    godComment: isDestroyed ? pickRandom(config.godComments.destroy) : pickRandom(config.godComments.failure),
     probabilityUsed: probability,
+    newFailureCount,
+    failureLocked,
   }
 }
 
-// ===== 강화 결과를 장비 인스턴스에 적용 =====
+// ===== 결과를 장비에 적용 =====
 export function applyEnhancementResult(
   equipment: EquipmentInstance,
   result: EnhancementResult
 ): EquipmentInstance | null {
   if (result.outcome === 'destroy') return null
 
-  const updated = { ...equipment }
+  const updated: EquipmentInstance = { ...equipment }
   updated.currentLevel = result.newLevel
+  // 총 실패 횟수 업데이트 (성공/실패 모두 적용, 리셋 없음)
+  updated.failureCount = result.newFailureCount
 
   if (result.penaltyApplied === 'DURABILITY_DAMAGE') {
-    updated.currentDurability = Math.max(
-      0,
-      updated.currentDurability - result.penaltyMagnitude
-    )
+    updated.currentDurability = Math.max(0, updated.currentDurability - result.penaltyMagnitude)
+  }
+
+  if (result.penaltyApplied === 'MAX_LEVEL_REDUCE') {
+    updated.maxLevel = Math.max(updated.currentLevel, updated.maxLevel - result.penaltyMagnitude)
+  }
+
+  if (result.penaltyApplied === 'ENHANCEMENT_LOCK') {
+    updated.enhancementLockTurns = result.penaltyMagnitude
   }
 
   return updated
