@@ -504,3 +504,64 @@ export interface WaveResult {
   waveDefenseBonusGained: number
   combatDetails: WaveCombatDetail[]
 }
+
+// ===== 상점 시스템 =====
+
+// 등급별 기본 판매가 (플레이어→상회)
+export const GRADE_SELL_PRICE: Record<GradeType, number> = {
+  common:          30,
+  fine:            70,
+  rare:           150,
+  hero:           320,
+  legendary:      700,
+  legendary_relic: 1200,
+  ancient:         2000,
+  mythic:          4000,
+}
+
+// 등급별 상점 구매가 (상회→플레이어) — 판매가의 약 2.2배
+export const GRADE_BUY_PRICE: Record<GradeType, number> = {
+  common:          65,
+  fine:           155,
+  rare:           330,
+  hero:           700,
+  legendary:     1550,
+  legendary_relic: 2600,
+  ancient:        4400,
+  mythic:         8800,
+}
+
+export interface ShopItem {
+  id: string
+  equipment: EquipmentInstance
+  buyPrice: number   // 구매가
+  soldOut: boolean
+}
+
+export interface MerchantGuild {
+  id: string
+  name: string
+  description: string
+  nextVisitTurn: number   // 다음 방문 턴
+  inventory: ShopItem[]
+}
+
+// ===== 성벽 시스템 =====
+export interface WallState {
+  level: number          // 1~5
+  durability: number     // 현재 내구도
+  maxDurability: number  // 최대 내구도 = level * 50 + 100
+}
+
+export const WALL_DEFENSE_POWER = (level: number, durability: number, maxDurability: number): number => {
+  if (durability <= 0) return 0
+  const ratio = durability / maxDurability
+  const base = level * 25
+  if (ratio >= 0.5) return base
+  return Math.floor(base * (ratio * 2)) // 내구도 50% 미만은 비례 감소
+}
+
+export const WALL_UPGRADE_COST = (currentLevel: number): number => currentLevel * 300
+export const WALL_MAX_DURABILITY = (level: number): number => level * 50 + 100
+export const WALL_REPAIR_COST_PER_POINT = 2
+export const WALL_MAX_LEVEL = 5

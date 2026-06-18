@@ -9,6 +9,8 @@ import RepairMinigame from './components/RepairMinigame'
 import CommissionBoard from './components/CommissionBoard'
 import GuildScreen from './components/GuildScreen'
 import WaveEventScreen from './components/WaveEventScreen'
+import ShopScreen from './components/ShopScreen'
+import DefenseScreen from './components/DefenseScreen'
 
 function TitleScreen() {
   const setScreen = useGameStore((s) => s.setScreen)
@@ -38,19 +40,6 @@ function TitleScreen() {
   )
 }
 
-function ComingSoonScreen({ name, onBack }: { name: string; onBack: () => void }) {
-  return (
-    <div className="flex-1 flex flex-col items-center justify-center gap-4">
-      <div className="text-4xl">🚧</div>
-      <h2 className="text-forge-gold text-xl font-bold">{name}</h2>
-      <p className="text-forge-text-dim">준비 중입니다</p>
-      <button onClick={onBack} className="text-forge-text-dim hover:text-forge-gold transition-colors">
-        ← 영지로 돌아가기
-      </button>
-    </div>
-  )
-}
-
 function GameOverScreen() {
   const resetGame = useGameStore((s) => s.resetGame)
   return (
@@ -68,7 +57,7 @@ function GameOverScreen() {
 }
 
 export default function App() {
-  const { currentScreen, setScreen, isGameOver, pendingWaveEvent, waveResult } = useGameStore()
+  const { currentScreen, isGameOver, pendingWaveEvent, waveResult } = useGameStore()
 
   if (isGameOver) return <GameOverScreen />
 
@@ -86,12 +75,8 @@ export default function App() {
         {currentScreen === 'repair-minigame' && <RepairMinigame />}
         {currentScreen === 'commission' && <CommissionBoard />}
         {currentScreen === 'guild'      && <GuildScreen />}
-        {currentScreen === 'shop'       && (
-          <ComingSoonScreen name="상점" onBack={() => setScreen('hub')} />
-        )}
-        {currentScreen === 'defense'    && (
-          <ComingSoonScreen name="방어 시설" onBack={() => setScreen('hub')} />
-        )}
+        {currentScreen === 'shop'    && <ShopScreen />}
+        {currentScreen === 'defense' && <DefenseScreen />}
       </div>
     </div>
   )

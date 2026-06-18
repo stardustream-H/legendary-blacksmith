@@ -2,12 +2,16 @@ import { create } from 'zustand'
 import {
   EquipmentInstance, ScreenType, EnhancementResult, Commission,
   Adventurer, Region, ExpeditionResult, Retainer, TroopSlot, WaveResult,
-  STAT_GRADE_VALUE, TROOP_TYPE_NAMES, StatGrade, CharacterClass,
+  STAT_GRADE_VALUE, TROOP_TYPE_NAMES, MerchantGuild, ShopItem,
+  GRADE_BUY_PRICE, GRADE_SELL_PRICE, WallState,
+  WALL_MAX_DURABILITY, WALL_UPGRADE_COST, WALL_REPAIR_COST_PER_POINT,
+  WALL_DEFENSE_POWER, WALL_MAX_LEVEL, GradeType, StatGrade, CharacterClass,
 } from '../types'
 import { STARTING_EQUIPMENT } from '../data/startingEquipment'
 import { STARTING_ADVENTURERS } from '../data/adventurers'
 import { STARTING_REGIONS } from '../data/regions'
 import { STARTING_RETAINERS, STARTING_TROOP_SLOTS } from '../data/retainers'
+import { STARTING_MERCHANT_GUILDS } from '../data/shop'
 import { generateCommissions } from '../systems/commissionSystem'
 import {
   resolveExpedition, calculateReturnTurn, generateNewAdventurer,
@@ -161,6 +165,17 @@ interface GameState {
   resolveWave: () => void
   clearWaveResult: () => void
 
+  // ===== 상점 시스템 =====
+  merchantGuilds: MerchantGuild[]
+  sellEquipment: (equipmentId: string) => void
+  buyShopItem: (guildId: string, itemId: string) => boolean
+  visitMerchant: (guildId: string) => void   // 내부용 (advanceTurn 호출)
+
+  // ===== 성벽 =====
+  wall: WallState
+  upgradeWall: () => boolean
+  repairWall: (amount: number) => boolean
+
   // ===== 게임 상태 =====
   isGameOver: boolean
   isClear: boolean
@@ -202,6 +217,8 @@ const initialState = {
   waveNumber: 0,
   pendingWaveEvent: false,
   waveResult: null as WaveResult | null,
+  merchantGuilds: STARTING_MERCHANT_GUILDS.map(g => ({ ...g })),
+  wall: { level: 1, durability: 150, maxDurability: 150 } as WallState,
   isGameOver: false,
   isClear: false,
 }
@@ -276,6 +293,29 @@ export const useGameStore = create<GameState>((set, get) => ({
     // 웨이브 체크
     const pendingWaveEvent = nextTurn >= state.nextWaveTurn && !state.pendingWaveEvent
 
+    // 상인 방문 체크
+    const updatedGuilds = state.merchantGuilds.map(guild => {
+      if (nextTurn >= guild.nextVisitTurn) {
+        // 새 재고 생성 (3~6개)
+        const count = 3 + Math.floor(Math.random() * 4)
+        const grades: GradeType[] = ['common', 'common', 'fine', 'fine', 'fine', 'rare']
+        const newInventory: ShopItem[] = []
+        for (let i = 0; i < count; i++) {
+          const grade = grades[Math.floor(Math.random() * grades.length)]
+          const eq = generateRewardEquipment(grade)
+          newInventory.push({
+            id: `shop_${nextTurn}_${i}`,
+            equipment: eq,
+            buyPrice: GRADE_BUY_PRICE[grade],
+            soldOut: false,
+          })
+        }
+        const interval = 4 + Math.floor(Math.random() * 5) // 4~8턴
+        return { ...guild, inventory: newInventory, nextVisitTurn: nextTurn + interval }
+      }
+      return guild
+    })
+
     set({
       turn: nextTurn, ...date,
       divinePower: newDivinePower,
@@ -288,6 +328,7 @@ export const useGameStore = create<GameState>((set, get) => ({
       gold: goldAfterMonth,
       lastMonthlyReport: monthlyReport,
       pendingWaveEvent: pendingWaveEvent ? true : state.pendingWaveEvent,
+      merchantGuilds: updatedGuilds,
     })
   },
 
@@ -466,7 +507,7 @@ export const useGameStore = create<GameState>((set, get) => ({
     const waveNumber = state.waveNumber + 1
     const enemyStrength = calcEnemyStrength(waveNumber)
 
-    // 전투력 계산
+    // 병력 전투력 계산
     const combatDetails = state.troopSlots.map(slot => {
       const commander = slot.commanderId
         ? state.retainers.find(r => r.id === slot.commanderId) ?? null
@@ -479,7 +520,15 @@ export const useGameStore = create<GameState>((set, get) => ({
         power,
       }
     })
-    const defensePower = combatDetails.reduce((sum, d) => sum + d.power, 0)
+    const troopPower = combatDetails.reduce((sum, d) => sum + d.power, 0)
+
+    // 성벽 방어력 추가
+    const wallPower = WALL_DEFENSE_POWER(state.wall.level, state.wall.durability, state.wall.maxDurability)
+    const defensePower = troopPower + wallPower
+
+    // 성벽 내구도 소모 (적 전력의 25%, 최소 10)
+    const durabilityDamage = Math.max(10, Math.floor(enemyStrength * 0.25))
+    const newDurability = Math.max(0, state.wall.durability - durabilityDamage)
 
     const outcome = defensePower >= enemyStrength ? 'victory' as const : 'defeat' as const
     let goldChange = 0
@@ -518,10 +567,100 @@ export const useGameStore = create<GameState>((set, get) => ({
       gold: Math.max(0, s.gold + goldChange),
       divineRank: Math.max(0, Math.min(100, s.divineRank + divineRankChange)),
       waveDefenseBonus: s.waveDefenseBonus + waveDefenseBonusGained,
+      wall: { ...s.wall, durability: newDurability },
     }))
   },
 
   clearWaveResult: () => set({ waveResult: null }),
+  // ===== 상점 액션 =====
+  sellEquipment: (equipmentId) => {
+    const state = get()
+    const eq = state.equipment.find(e => e.id === equipmentId)
+    if (!eq || !eq.isOwned) return
+    const base = GRADE_SELL_PRICE[eq.grade as GradeType] ?? 30
+    const sellPrice = base + eq.currentLevel * 25
+    get().addGold(sellPrice)
+    set((s) => ({
+      equipment: s.equipment.filter(e => e.id !== equipmentId),
+      selectedEquipmentId: s.selectedEquipmentId === equipmentId ? null : s.selectedEquipmentId,
+    }))
+  },
+
+  buyShopItem: (guildId, itemId) => {
+    const state = get()
+    const guild = state.merchantGuilds.find(g => g.id === guildId)
+    const item = guild?.inventory.find(i => i.id === itemId)
+    if (!item || item.soldOut) return false
+    if (state.gold < item.buyPrice) return false
+    get().spendGold(item.buyPrice)
+    const boughtEq = { ...item.equipment, isOwned: true }
+    set((s) => ({
+      equipment: [...s.equipment, boughtEq],
+      merchantGuilds: s.merchantGuilds.map(g =>
+        g.id === guildId
+          ? { ...g, inventory: g.inventory.map(i => i.id === itemId ? { ...i, soldOut: true } : i) }
+          : g
+      ),
+    }))
+    return true
+  },
+
+  visitMerchant: (guildId) => {
+    // 수동 방문 (테스트용 — 실제로는 advanceTurn이 처리)
+    const state = get()
+    const grades: GradeType[] = ['common', 'common', 'fine', 'fine', 'fine', 'rare']
+    const count = 3 + Math.floor(Math.random() * 4)
+    const newInventory: ShopItem[] = []
+    for (let i = 0; i < count; i++) {
+      const grade = grades[Math.floor(Math.random() * grades.length)]
+      const eq = generateRewardEquipment(grade)
+      newInventory.push({
+        id: `shop_manual_${Date.now()}_${i}`,
+        equipment: eq,
+        buyPrice: GRADE_BUY_PRICE[grade],
+        soldOut: false,
+      })
+    }
+    const interval = 4 + Math.floor(Math.random() * 5)
+    set((s) => ({
+      merchantGuilds: s.merchantGuilds.map(g =>
+        g.id === guildId
+          ? { ...g, inventory: newInventory, nextVisitTurn: state.turn + interval }
+          : g
+      ),
+    }))
+  },
+
+  // ===== 성벽 액션 =====
+  upgradeWall: () => {
+    const state = get()
+    if (state.wall.level >= WALL_MAX_LEVEL) return false
+    const cost = WALL_UPGRADE_COST(state.wall.level)
+    if (state.gold < cost) return false
+    get().spendGold(cost)
+    const newLevel = state.wall.level + 1
+    const newMax = WALL_MAX_DURABILITY(newLevel)
+    set(() => ({
+      wall: { level: newLevel, durability: newMax, maxDurability: newMax },
+    }))
+    return true
+  },
+
+  repairWall: (amount) => {
+    const state = get()
+    const missing = state.wall.maxDurability - state.wall.durability
+    const repairAmount = Math.min(amount, missing)
+    if (repairAmount <= 0) return false
+    const cost = repairAmount * WALL_REPAIR_COST_PER_POINT
+    if (state.gold < cost) return false
+    get().spendGold(cost)
+    set(() => ({
+      wall: { ...state.wall, durability: state.wall.durability + repairAmount },
+    }))
+    return true
+  },
+
+
 
   // ===== 왕국 파견 요청 (가신 영입) =====
   requestKingdomDispatch: () => {
@@ -558,5 +697,7 @@ export const useGameStore = create<GameState>((set, get) => ({
       retainers: [...STARTING_RETAINERS],
       troopSlots: [...STARTING_TROOP_SLOTS],
       commissions: [],
+      merchantGuilds: STARTING_MERCHANT_GUILDS.map(g => ({ ...g })),
+      wall: { level: 1, durability: 150, maxDurability: 150 },
     }),
 }))
