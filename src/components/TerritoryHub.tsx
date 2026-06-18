@@ -40,7 +40,7 @@ const BUILDINGS: Building[] = [
     name: '상점',
     icon: '🏦',
     description: '장비와 재료를 구매',
-    locked: true,
+    locked: false,
     position: 'col-start-1 row-start-3',
   },
   {
@@ -48,7 +48,7 @@ const BUILDINGS: Building[] = [
     name: '방어 시설',
     icon: '🛡️',
     description: '영지 수비력 확인 및 강화',
-    locked: true,
+    locked: false,
     position: 'col-start-4 row-start-3',
   },
 ]
