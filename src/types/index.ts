@@ -641,6 +641,7 @@ export interface TurnReport {
   adventurerRecovered: string[]
   newAdventurerName: string | null
   kingdomRequestAvailable: boolean
+  kingdomCandidatesWaiting: boolean
   waveWarning: boolean
 }
 

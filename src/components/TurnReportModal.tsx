@@ -115,7 +115,11 @@ export default function TurnReportModal() {
             <span className="text-2xl">👑</span>
             <div>
               <div className="text-sm font-bold text-forge-text">왕국 파견 요청</div>
-              <div className="text-forge-text-dim text-xs">영주성에서 왕국 파견 요청을 처리할 수 있습니다</div>
+              <div className="text-forge-text-dim text-xs">
+                {r.kingdomCandidatesWaiting
+                  ? '영주성에 가신 후보가 대기 중입니다. 영입 여부를 결정하세요.'
+                  : '이번 달 왕국 파견 요청이 가능합니다. 영주성에서 가신을 영입할 수 있습니다.'}
+              </div>
             </div>
           </div>
         )}

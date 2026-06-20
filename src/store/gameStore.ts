@@ -358,8 +358,10 @@ export const useGameStore = create<GameState>((set, get) => ({
         .reduce((sum, r) => sum + r.salary, 0)
     }
 
-    // 왕국 파견 가능 여부
-    const kingdomRequestAvailable = state.kingdomCandidates.length > 0
+    // 왕국 파견 가능 여부: 이번 달 아직 요청 안 함 OR 후보 대기 중
+    const nextMonth = Math.floor((nextTurn - 1) / 4) + 1
+    const kingdomRequestAvailable =
+      state.lastKingdomRequestMonth < nextMonth || state.kingdomCandidates.length > 0
 
     // 웨이브 경고
     const waveWarning = pendingWaveEvent
@@ -392,6 +394,7 @@ export const useGameStore = create<GameState>((set, get) => ({
       adventurerRecovered: recoveredAdventurers,
       newAdventurerName,
       kingdomRequestAvailable,
+      kingdomCandidatesWaiting: state.kingdomCandidates.length > 0,
       waveWarning,
     }
 
