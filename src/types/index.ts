@@ -77,8 +77,12 @@ export interface GradeConfig {
 }
 
 // ===== 장비 =====
-export type EquipmentType = 'sword' | 'axe' | 'spear' | 'bow' | 'staff' | 'dagger'
-  | 'armor' | 'helm' | 'shield' | 'gloves' | 'boots'
+export type EquipmentType =
+  | 'sword' | 'axe' | 'spear' | 'bow' | 'staff' | 'dagger'
+  | 'cloth' | 'light_armor' | 'medium_armor' | 'plate'
+
+export const WEAPON_TYPES: EquipmentType[] = ['sword', 'axe', 'spear', 'bow', 'staff', 'dagger']
+export const ARMOR_TYPES: EquipmentType[] = ['cloth', 'light_armor', 'medium_armor', 'plate']
 
 export const EQUIPMENT_TYPE_NAMES: Record<EquipmentType, string> = {
   sword: '검',
@@ -87,11 +91,10 @@ export const EQUIPMENT_TYPE_NAMES: Record<EquipmentType, string> = {
   bow: '활',
   staff: '지팡이',
   dagger: '단검',
-  armor: '갑옷',
-  helm: '투구',
-  shield: '방패',
-  gloves: '장갑',
-  boots: '부츠',
+  cloth: '천옷',
+  light_armor: '경갑',
+  medium_armor: '중갑',
+  plate: '판금',
 }
 
 export interface EquipmentInstance {
@@ -294,24 +297,24 @@ export const CHARACTER_CLASS_NAMES: Record<CharacterClass, string> = {
 
 // 직업별 허용 무기
 export const CLASS_WEAPON_ALLOW: Record<CharacterClass, EquipmentType[]> = {
-  swordsman: ['sword', 'axe', 'shield'],
-  spearman:  ['spear', 'shield'],
+  swordsman: ['sword', 'axe'],
+  spearman:  ['spear'],
   rogue:     ['dagger', 'sword'],
   archer:    ['bow'],
   mage:      ['staff'],
   priest:    ['staff', 'axe'],
-  knight:    ['sword', 'spear', 'shield'],
+  knight:    ['sword', 'spear'],
 }
 
 // 직업별 허용 방어구
 export const CLASS_ARMOR_ALLOW: Record<CharacterClass, EquipmentType[]> = {
-  swordsman: ['armor', 'helm', 'gloves', 'boots'],
-  spearman:  ['armor', 'helm', 'gloves', 'boots'],
-  rogue:     ['gloves', 'boots'],
-  archer:    ['helm', 'gloves', 'boots'],
-  mage:      ['helm', 'gloves', 'boots'],
-  priest:    ['armor', 'helm', 'gloves', 'boots'],
-  knight:    ['armor', 'helm', 'gloves', 'boots'],
+  swordsman: ['medium_armor'],
+  spearman:  ['medium_armor'],
+  rogue:     ['light_armor'],
+  archer:    ['light_armor'],
+  mage:      ['cloth'],
+  priest:    ['cloth'],
+  knight:    ['plate'],
 }
 
 // ===== 모험가 길드 시스템 =====
@@ -320,23 +323,22 @@ export type AdventurerRole = 'tank' | 'melee_dps' | 'ranged_dps' | 'magic_dps' |
 export type RoleCategory = 'tank' | 'dps' | 'support'
 
 export type AdventurerClass =
-  | 'sword_knight'
-  | 'shield_warrior'
-  | 'rogue'
-  | 'mercenary'
-  | 'archer'
-  | 'spearman'
-  | 'fire_mage'
-  | 'ice_mage'
-  | 'priest'
-  | 'herbalist'
-  | 'bard'
-  | 'tactician'
-  | 'cursemancer'
-  | 'poisoner'
+  // 기존
+  | 'sword_knight' | 'shield_warrior' | 'rogue' | 'mercenary'
+  | 'archer' | 'spearman' | 'fire_mage' | 'ice_mage'
+  | 'priest' | 'herbalist' | 'bard' | 'tactician' | 'cursemancer' | 'poisoner'
+  // 원거리/탐색
+  | 'hunter' | 'beast_hunter' | 'ranger' | 'tracker' | 'sniper'
+  // 전사/근접
+  | 'gladiator' | 'berserker' | 'wanderer' | 'monk'
+  // 마법
+  | 'battle_mage' | 'necromancer' | 'warlock' | 'illusionist' | 'summoner'
+  // 사제/자연
+  | 'druid' | 'dark_priest'
 
 // AdventurerClass → CharacterClass 매핑 (장비 제한 적용용)
 export const ADVENTURER_CLASS_TO_CHARACTER_CLASS: Record<AdventurerClass, CharacterClass> = {
+  // 기존
   sword_knight:   'swordsman',
   shield_warrior: 'swordsman',
   rogue:          'rogue',
@@ -351,6 +353,26 @@ export const ADVENTURER_CLASS_TO_CHARACTER_CLASS: Record<AdventurerClass, Charac
   tactician:      'swordsman',
   cursemancer:    'mage',
   poisoner:       'rogue',
+  // 원거리/탐색
+  hunter:         'archer',
+  beast_hunter:   'archer',
+  ranger:         'archer',
+  tracker:        'archer',
+  sniper:         'archer',
+  // 전사/근접
+  gladiator:      'rogue',
+  berserker:      'swordsman',
+  wanderer:       'rogue',
+  monk:           'rogue',
+  // 마법
+  battle_mage:    'mage',
+  necromancer:    'mage',
+  warlock:        'mage',
+  illusionist:    'mage',
+  summoner:       'mage',
+  // 사제/자연
+  druid:          'priest',
+  dark_priest:    'priest',
 }
 
 export type AdventurerGrade = 'rookie' | 'veteran' | 'elite' | 'legend'
@@ -461,6 +483,7 @@ export const ROLE_NAMES: Record<AdventurerRole, string> = {
 }
 
 export const CLASS_NAMES: Record<AdventurerClass, string> = {
+  // 기존
   sword_knight:   '검방기사',
   shield_warrior: '방패전사',
   rogue:          '도적',
@@ -475,6 +498,26 @@ export const CLASS_NAMES: Record<AdventurerClass, string> = {
   tactician:      '전술가',
   cursemancer:    '저주술사',
   poisoner:       '독술사',
+  // 원거리/탐색
+  hunter:         '헌터',
+  beast_hunter:   '야수사냥꾼',
+  ranger:         '레인저',
+  tracker:        '추적자',
+  sniper:         '저격수',
+  // 전사/근접
+  gladiator:      '검투사',
+  berserker:      '광전사',
+  wanderer:       '방랑검객',
+  monk:           '수도사',
+  // 마법
+  battle_mage:    '전투마도사',
+  necromancer:    '강령술사',
+  warlock:        '흑마법사',
+  illusionist:    '환술사',
+  summoner:       '소환사',
+  // 사제/자연
+  druid:          '드루이드',
+  dark_priest:    '암흑사제',
 }
 
 export const ADVENTURER_GRADE_NAMES: Record<AdventurerGrade, string> = {

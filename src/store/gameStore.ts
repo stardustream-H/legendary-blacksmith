@@ -22,52 +22,229 @@ import {
 } from '../systems/guildSystem'
 
 
-// ===== 왕국 파견 요청 후보 생성 =====
-const KINGDOM_CANDIDATE_NAMES = [
-  '용감한 고도', '강인한 박서현', '냉철한 이준', '날렵한 최아름', '충직한 정우성',
-  '독한 오민재', '지략가 강혜린', '흔들림없는 한동현', '단호한 신지연', '영리한 윤태오',
-  '강철의 임수빈', '전장의 남궁철', '매서운 백현우', '끈질긴 조성민', '예리한 황다은',
-]
+// ===== 왕국 파견 후보 생성 시스템 (1~4단계 티어) =====
+// 왕국 파견은 공식 군인/관리 계통 — 길드 모험가와 구분
+// 게임 진행(턴)이 쌓일수록 고단계 후보 등장 확률 상승
 
-const CANDIDATE_CLASSES: CharacterClass[] = [
-  'knight', 'swordsman', 'archer', 'spearman', 'mage', 'priest', 'rogue',
-]
+const KINGDOM_LAST_NAMES = ['고', '박', '이', '최', '정', '강', '한', '신', '윤', '남궁', '황', '백', '조', '임', '전']
 
-const GRADE_POOL: StatGrade[] = ['E', 'D', 'C', 'B', 'A']
-const GRADE_WEIGHTS =                [5,   15,  40,  30,  10]
+// 티어 해금 턴 기준 (1 month = 4 turns)
+// Tier1: 항상 / Tier2: turn≥12(3개월) / Tier3: turn≥28(7개월/1웨이브 이후) / Tier4: turn≥52(13개월/2~3웨이브)
+const TIER_UNLOCK_TURN = [0, 0, 12, 28, 52] as const  // index=tier
 
-function weightedGrade(): StatGrade {
-  const total = GRADE_WEIGHTS.reduce((a, b) => a + b, 0)
+// 턴 기반 티어 가중치 계산 (총합=100)
+// 해금 직후엔 낮은 확률에서 시작, 턴이 쌓일수록 고단계 비율 증가
+function calcTierWeights(turn: number): [number, number, number, number] {
+  // 각 티어가 해금됐는지 + 해금 후 몇 턴 지났는지
+  const t2Turns = Math.max(0, turn - TIER_UNLOCK_TURN[2])  // tier2 경과 턴
+  const t3Turns = Math.max(0, turn - TIER_UNLOCK_TURN[3])  // tier3 경과 턴
+  const t4Turns = Math.max(0, turn - TIER_UNLOCK_TURN[4])  // tier4 경과 턴
+
+  // 티어별 가중치: 경과 턴에 비례해 증가 (상한 있음)
+  const w2 = t2Turns > 0 ? Math.min(25, 5 + t2Turns * 0.8) : 0
+  const w3 = t3Turns > 0 ? Math.min(20, 3 + t3Turns * 0.6) : 0
+  const w4 = t4Turns > 0 ? Math.min(15, 2 + t4Turns * 0.4) : 0
+  const w1 = Math.max(40, 100 - w2 - w3 - w4)  // tier1은 최소 40% 보장
+  return [w1, w2, w3, w4]
+}
+
+function pickTier(turn: number): 1 | 2 | 3 | 4 {
+  const [w1, w2, w3, w4] = calcTierWeights(turn)
+  const total = w1 + w2 + w3 + w4
   let r = Math.random() * total
-  for (let i = 0; i < GRADE_POOL.length; i++) {
-    r -= GRADE_WEIGHTS[i]
-    if (r <= 0) return GRADE_POOL[i]
+  if ((r -= w1) <= 0) return 1
+  if ((r -= w2) <= 0) return 2
+  if ((r -= w3) <= 0) return 3
+  return 4
+}
+
+// ===== 직종별 티어 데이터 =====
+interface KingdomTierData {
+  titles: string[]
+  salary: number
+  // 스탯 가중치 [E,D,C,B,A] — 티어 높을수록 전반적으로 우수
+  profW: number[]; judgW: number[]; vitaW: number[]; courW: number[]
+}
+interface KingdomClassDef {
+  cls: CharacterClass
+  tiers: [KingdomTierData, KingdomTierData, KingdomTierData, KingdomTierData]  // [t1,t2,t3,t4]
+  quirks: string[]
+}
+
+const KINGDOM_CLASSES: KingdomClassDef[] = [
+  // ── 검사/보병 계열 ─────────────────────────────────────────────
+  {
+    cls: 'swordsman',
+    tiers: [
+      { titles: ['보병', '전사', '검사'],           salary: 55,
+        profW:[10,25,40,20,5], judgW:[15,30,35,15,5], vitaW:[5,15,40,30,10], courW:[5,15,35,30,15] },
+      { titles: ['베테랑보병', '방패전사', '돌격전사'], salary: 70,
+        profW:[5,15,35,30,15], judgW:[10,25,40,20,5], vitaW:[2,8,35,35,20], courW:[2,8,30,35,25] },
+      { titles: ['정예보병', '정예검사', '도끼전사'],   salary: 90,
+        profW:[2,8,30,35,25], judgW:[5,15,35,30,15], vitaW:[0,5,25,40,30], courW:[0,5,20,40,35] },
+      { titles: ['왕립보병', '왕립검사', '광전사'],     salary: 115,
+        profW:[0,3,15,40,42], judgW:[2,8,25,40,25], vitaW:[0,2,10,35,53], courW:[0,2,8,35,55] },
+    ],
+    quirks: [
+      '검 하나로 뭐든 해결한다는 신념이 있다. 대부분은 실제로 가능하다.',
+      '전투 전날 반드시 검을 닦는다. 3시간이 걸린다.',
+      '군복을 절대 입지 않겠다고 했다가 임관하자마자 군복을 입었다.',
+      '전장에서 웃는 사람이다. 겁이 없는 게 아니라 겁이 뭔지를 모른다.',
+    ],
+  },
+  // ── 창병 계열 ──────────────────────────────────────────────────
+  {
+    cls: 'spearman',
+    tiers: [
+      { titles: ['창병', '투창병'],                   salary: 50,
+        profW:[10,25,40,20,5], judgW:[15,30,35,15,5], vitaW:[5,15,40,30,10], courW:[5,10,35,35,15] },
+      { titles: ['베테랑창병', '장창병'],               salary: 65,
+        profW:[5,15,35,30,15], judgW:[10,25,40,20,5], vitaW:[2,8,35,35,20], courW:[2,7,30,38,23] },
+      { titles: ['정예창병', '창기병'],                 salary: 80,
+        profW:[2,8,30,35,25], judgW:[5,15,35,30,15], vitaW:[0,5,25,40,30], courW:[0,4,22,42,32] },
+      { titles: ['왕립창병', '왕립기병'],               salary: 105,
+        profW:[0,3,15,40,42], judgW:[2,8,25,40,25], vitaW:[0,2,12,38,48], courW:[0,2,10,38,50] },
+    ],
+    quirks: [
+      '창이 닿는 거리 안에 적을 들이면 반드시 이긴다. 문제는 그 전 단계이다.',
+      '창 길이를 재는 습관이 있다. 매일 조금씩 달라진다고 주장한다.',
+      '말 위에서 싸우는 게 더 자연스럽다. 말이 없어도 마찬가지다.',
+    ],
+  },
+  // ── 궁수 계열 ──────────────────────────────────────────────────
+  {
+    cls: 'archer',
+    tiers: [
+      { titles: ['궁병', '사수'],                     salary: 55,
+        profW:[8,20,40,25,7], judgW:[8,20,40,25,7], vitaW:[15,30,35,15,5], courW:[10,20,38,25,7] },
+      { titles: ['베테랑궁병', '명사수', '추적자'],     salary: 70,
+        profW:[3,10,35,35,17], judgW:[3,10,35,35,17], vitaW:[10,25,40,20,5], courW:[5,15,38,30,12] },
+      { titles: ['정예궁수', '저격수', '레인저'],       salary: 90,
+        profW:[0,5,20,40,35], judgW:[0,5,20,40,35], vitaW:[8,20,40,22,10], courW:[2,10,30,38,20] },
+      { titles: ['왕립궁수', '호크아이', '왕립저격수'], salary: 115,
+        profW:[0,2,10,38,50], judgW:[0,2,10,38,50], vitaW:[5,15,38,28,14], courW:[0,5,20,40,35] },
+    ],
+    quirks: [
+      '눈을 감고도 100보 밖 과녁을 맞힌다. 눈을 뜨면 더 잘 맞힌다.',
+      '바람의 방향을 읽는 능력이 있다. 비가 올 때는 그냥 감으로 한다.',
+      '화살 재고를 항상 정확히 파악하고 있다. 하나가 사라지면 온종일 찾는다.',
+      '쏘기 전에 숨을 참는 버릇이 있다. 대화 중에도 갑자기 숨을 참는다.',
+    ],
+  },
+  // ── 마법사 계열 ────────────────────────────────────────────────
+  {
+    cls: 'mage',
+    tiers: [
+      { titles: ['마법사', '전투마도사'],               salary: 80,
+        profW:[5,15,35,30,15], judgW:[5,15,35,30,15], vitaW:[20,35,30,12,3], courW:[15,25,35,20,5] },
+      { titles: ['상급마법사', '전투마법사'],            salary: 100,
+        profW:[2,8,25,40,25], judgW:[2,8,25,40,25], vitaW:[15,30,35,15,5], courW:[10,22,35,23,10] },
+      { titles: ['수석마법사', '전장마도사'],            salary: 130,
+        profW:[0,3,15,38,44], judgW:[0,3,15,38,44], vitaW:[12,25,38,18,7], courW:[5,15,35,30,15] },
+      { titles: ['궁정마법사', '대마법사'],              salary: 170,
+        profW:[0,0,5,30,65], judgW:[0,0,5,30,65], vitaW:[10,20,38,22,10], courW:[3,10,28,35,24] },
+    ],
+    quirks: [
+      '마법 공식을 암기하는 속도가 놀랍다. 이름은 잘 못 외운다.',
+      '적을 쓰러뜨리는 것보다 마법 구현이 더 중요하다고 생각한다.',
+      '마법서를 항상 들고 다닌다. 마법서 없이도 마법을 쓸 수 있다.',
+      '왕립 마법학교 수석 졸업. 졸업식 축하 마법에서 천장을 날려버렸다.',
+      '왕국에서 가장 파괴적인 마법을 구사한다. 아군도 거리를 둔다.',
+    ],
+  },
+  // ── 사제 계열 ──────────────────────────────────────────────────
+  {
+    cls: 'priest',
+    tiers: [
+      { titles: ['사제', '치유사'],                    salary: 65,
+        profW:[8,20,38,25,9], judgW:[5,15,38,28,14], vitaW:[10,22,40,22,6], courW:[8,18,38,25,11] },
+      { titles: ['신관', '축복사'],                     salary: 85,
+        profW:[3,10,30,35,22], judgW:[2,8,28,38,24], vitaW:[7,18,40,25,10], courW:[5,13,35,30,17] },
+      { titles: ['고위사제', '전투사제'],               salary: 110,
+        profW:[0,5,20,40,35], judgW:[0,3,18,40,39], vitaW:[5,14,38,28,15], courW:[2,8,28,38,24] },
+      { titles: ['대신관', '성직자장'],                 salary: 145,
+        profW:[0,2,10,35,53], judgW:[0,0,8,32,60], vitaW:[3,10,32,30,25], courW:[0,4,20,38,38] },
+    ],
+    quirks: [
+      '신의 가호는 무한하다고 믿는다. 하지만 본인 체력은 유한하다.',
+      '기도 시간이 길다. 전투 중에도 기도를 멈추지 않는다.',
+      '치료하면서 설교를 병행한다. 환자가 회복보다 설교 종료를 더 기다린다.',
+      '신성력이 높은 영주를 섬기고 싶었다. 여기가 맞는 것 같기도 하다.',
+      '신이 직접 말을 건다고 한다. 실제로 전장에서 상당히 정확한 판단을 내린다.',
+    ],
+  },
+  // ── 기사 계열 (가장 희귀) ──────────────────────────────────────
+  {
+    cls: 'knight',
+    tiers: [
+      { titles: ['기사', '수비기사'],                  salary: 90,
+        profW:[5,10,30,35,20], judgW:[8,18,35,28,11], vitaW:[2,7,25,40,26], courW:[2,5,20,40,33] },
+      { titles: ['왕립기사', '수호기사'],               salary: 120,
+        profW:[2,5,20,40,33], judgW:[4,10,28,38,20], vitaW:[0,3,15,42,40], courW:[0,2,12,40,46] },
+      { titles: ['성기사', '신성기사', '성전사'],       salary: 160,
+        profW:[0,2,12,38,48], judgW:[0,4,20,38,38], vitaW:[0,0,8,38,54], courW:[0,0,5,32,63] },
+      { titles: ['기사단장', '왕국기사단장'],            salary: 210,
+        profW:[0,0,5,28,67], judgW:[0,2,12,35,51], vitaW:[0,0,3,28,69], courW:[0,0,0,22,78] },
+    ],
+    quirks: [
+      '기사도를 목숨보다 중요하게 여긴다. 기사도에 맞지 않는 일은 절대 하지 않는다.',
+      '왕국 최고의 기사 중 하나였다. 여기까지 어떻게 흘러온 것인지 본인도 모른다.',
+      '갑옷을 절대 벗지 않는다. 잘 때도 갑옷을 입는다고 한다.',
+      '영지를 지키는 것이 기사의 의무라고 말한다. 왜 여기에 있는지는 설명하지 않는다.',
+      '왕국 기사단에서 전설로 불렸다. 그 전설이 여기 있다.',
+    ],
+  },
+]
+
+// 직종 가중치 (knight는 희귀, mage도 희귀)
+// swordsman, spearman, archer, mage, priest, knight
+const KINGDOM_CLASS_WEIGHTS = [30, 20, 20, 10, 15, 5]
+
+function weightedKingdomClass(): KingdomClassDef {
+  const total = KINGDOM_CLASS_WEIGHTS.reduce((a, b) => a + b, 0)
+  let r = Math.random() * total
+  for (let i = 0; i < KINGDOM_CLASSES.length; i++) {
+    r -= KINGDOM_CLASS_WEIGHTS[i]
+    if (r <= 0) return KINGDOM_CLASSES[i]
+  }
+  return KINGDOM_CLASSES[0]
+}
+
+function weightedStat(weights: number[]): StatGrade {
+  const pool: StatGrade[] = ['E', 'D', 'C', 'B', 'A']
+  const total = weights.reduce((a, b) => a + b, 0)
+  let r = Math.random() * total
+  for (let i = 0; i < pool.length; i++) {
+    r -= weights[i]
+    if (r <= 0) return pool[i]
   }
   return 'C'
 }
 
-function generateKingdomCandidate(idx: number): Retainer {
-  const name = KINGDOM_CANDIDATE_NAMES[Math.floor(Math.random() * KINGDOM_CANDIDATE_NAMES.length)]
-  const cls = CANDIDATE_CLASSES[Math.floor(Math.random() * CANDIDATE_CLASSES.length)]
-  const salaryBase: Record<string, number> = {
-    knight: 80, swordsman: 60, archer: 65, spearman: 55, mage: 90, priest: 75, rogue: 50,
-  }
+function generateKingdomCandidate(idx: number, turn: number): Retainer {
+  const classDef = weightedKingdomClass()
+  const tier = pickTier(turn)
+  const tierData = classDef.tiers[tier - 1]
+  const lastName = KINGDOM_LAST_NAMES[Math.floor(Math.random() * KINGDOM_LAST_NAMES.length)]
+  const title = tierData.titles[Math.floor(Math.random() * tierData.titles.length)]
+  const quirk = classDef.quirks[Math.floor(Math.random() * classDef.quirks.length)]
+  const salaryVar = Math.floor(Math.random() * 4) * 5  // +0~15
   return {
     id: `cand_${Date.now()}_${idx}`,
-    name,
-    characterClass: cls,
+    name: `${title} ${lastName}`,
+    characterClass: classDef.cls,
     stats: {
-      proficiency: weightedGrade(),
-      judgment:    weightedGrade(),
-      vitality:    weightedGrade(),
-      courage:     weightedGrade(),
+      proficiency: weightedStat(tierData.profW),
+      judgment:    weightedStat(tierData.judgW),
+      vitality:    weightedStat(tierData.vitaW),
+      courage:     weightedStat(tierData.courW),
     },
-    loyalty: 60 + Math.floor(Math.random() * 20),
-    salary: (salaryBase[cls] ?? 60) + Math.floor(Math.random() * 3) * 10,
+    loyalty: 50 + (tier - 1) * 8 + Math.floor(Math.random() * 15),
+    salary: tierData.salary + salaryVar,
     equippedWeaponId: null,
     equippedArmorId: null,
     isActive: true,
-    quirk: '',
+    quirk,
   }
 }
 
@@ -849,7 +1026,7 @@ export const useGameStore = create<GameState>((set, get) => ({
     const count = 2 + Math.floor(Math.random() * 4) // 2~5명
     const candidates: Retainer[] = []
     for (let i = 0; i < count; i++) {
-      candidates.push(generateKingdomCandidate(i))
+      candidates.push(generateKingdomCandidate(i, state.turn))
     }
     set({ kingdomCandidates: candidates, lastKingdomRequestMonth: currentMonth })
     return true

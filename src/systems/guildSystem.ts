@@ -1,7 +1,7 @@
 import {
   Adventurer, AdventurerGrade, AdventurerRole, RoleCategory,
   Region, Expedition, ExpeditionOutcome, ExpeditionResult,
-  EquipmentInstance, GradeType, CharacterStats, StatGrade, STAT_GRADE_VALUE,
+  EquipmentInstance, GradeType, CharacterStats, StatGrade, STAT_GRADE_VALUE, EquipmentType,
 } from '../types'
 import { ADVENTURER_POOL } from '../data/adventurers'
 
@@ -179,25 +179,81 @@ let rewardEqCounter = 1000
 export function generateRewardEquipment(grade: GradeType): EquipmentInstance {
   const id = `reward_eq_${rewardEqCounter++}`
 
-  const namesByGrade: Record<string, string[]> = {
-    common:  ['낡은 검', '철제 단검', '목재 방패', '가죽 갑옷', '낡은 활'],
-    fine:    ['강철 롱소드', '은장 단검', '철제 방패', '사슬 갑옷', '사냥꾼의 활'],
-    rare:    ['정예 검사의 검', '독사의 단검', '마법사의 지팡이', '용사의 갑주', '엘프의 활'],
-    hero:    ['영웅의 대검', '어둠의 블레이드', '현자의 지팡이', '영웅의 판금갑옷', '천공의 활'],
-    legendary: ['전설의 성검', '신화급 레이피어', '대마법사의 지팡이', '전설의 갑옷', '신궁의 활'],
+  // [이름, 타입] 쌍으로 관리 — 무기 6종 + 갑옷 4종(천옷/경갑/중갑/판금)
+  type EqEntry = { name: string; type: EquipmentType }
+  const poolByGrade: Record<string, EqEntry[]> = {
+    common: [
+      { name: '낡은 검',       type: 'sword' },
+      { name: '녹슨 도끼',     type: 'axe' },
+      { name: '목창',          type: 'spear' },
+      { name: '나무 단궁',     type: 'bow' },
+      { name: '나무 지팡이',   type: 'staff' },
+      { name: '철제 단검',     type: 'dagger' },
+      { name: '낡은 마포의',   type: 'cloth' },
+      { name: '가죽 경갑',     type: 'light_armor' },
+      { name: '철제 중갑',     type: 'medium_armor' },
+      { name: '낡은 판금갑옷', type: 'plate' },
+    ],
+    fine: [
+      { name: '강철 롱소드',   type: 'sword' },
+      { name: '강철 전투도끼', type: 'axe' },
+      { name: '철촉 장창',     type: 'spear' },
+      { name: '사냥꾼의 활',   type: 'bow' },
+      { name: '은제 지팡이',   type: 'staff' },
+      { name: '은장 단검',     type: 'dagger' },
+      { name: '견고한 법복',   type: 'cloth' },
+      { name: '강화 가죽갑옷', type: 'light_armor' },
+      { name: '사슬 중갑',     type: 'medium_armor' },
+      { name: '강철 판금갑옷', type: 'plate' },
+    ],
+    rare: [
+      { name: '정예 검사의 검',   type: 'sword' },
+      { name: '광폭의 전투도끼',  type: 'axe' },
+      { name: '용사의 장창',      type: 'spear' },
+      { name: '엘프의 활',        type: 'bow' },
+      { name: '마법사의 지팡이',  type: 'staff' },
+      { name: '독사의 단검',      type: 'dagger' },
+      { name: '현자의 법의',      type: 'cloth' },
+      { name: '정예 경갑',        type: 'light_armor' },
+      { name: '용사의 중갑',      type: 'medium_armor' },
+      { name: '기사의 판금',      type: 'plate' },
+    ],
+    hero: [
+      { name: '영웅의 대검',       type: 'sword' },
+      { name: '파멸의 대도끼',     type: 'axe' },
+      { name: '천공을 가르는 창',  type: 'spear' },
+      { name: '천공의 활',         type: 'bow' },
+      { name: '현자의 지팡이',     type: 'staff' },
+      { name: '어둠의 블레이드',   type: 'dagger' },
+      { name: '대현자의 법의',     type: 'cloth' },
+      { name: '영웅의 경갑',       type: 'light_armor' },
+      { name: '영웅의 중갑',       type: 'medium_armor' },
+      { name: '영웅의 판금갑옷',   type: 'plate' },
+    ],
+    legendary: [
+      { name: '전설의 성검',         type: 'sword' },
+      { name: '신화의 마왕도끼',     type: 'axe' },
+      { name: '신수의 성창',         type: 'spear' },
+      { name: '신궁의 활',           type: 'bow' },
+      { name: '대마법사의 지팡이',   type: 'staff' },
+      { name: '신화급 레이피어',     type: 'dagger' },
+      { name: '신화 대현자의 법의',  type: 'cloth' },
+      { name: '전설의 경갑',         type: 'light_armor' },
+      { name: '전설의 판갑',         type: 'medium_armor' },
+      { name: '신화의 성판금',       type: 'plate' },
+    ],
   }
   const maxLevels: Record<string, number> = {
     common: 5, fine: 10, rare: 15, hero: 20, legendary: 30,
   }
-  const typePool = ['sword', 'dagger', 'shield', 'armor', 'bow'] as const
-  const names = namesByGrade[grade] ?? namesByGrade['common']
-  const idx = Math.floor(Math.random() * names.length)
+  const pool = poolByGrade[grade] ?? poolByGrade['common']
+  const entry = pool[Math.floor(Math.random() * pool.length)]
 
   return {
     id,
-    name: names[idx],
+    name: entry.name,
     grade: grade as GradeType,
-    type: typePool[idx],
+    type: entry.type,
     currentLevel: 0,
     maxLevel: maxLevels[grade] ?? 10,
     currentDurability: 100,
