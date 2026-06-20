@@ -23,6 +23,21 @@ export default function TurnReportModal() {
           </div>
         </div>
 
+        {/* 왕국 파견 */}
+        {r.kingdomRequestAvailable && (
+          <div className="bg-purple-950/40 border border-purple-800 rounded-xl p-3 flex items-center gap-3">
+            <span className="text-2xl">👑</span>
+            <div>
+              <div className="text-sm font-bold text-forge-text">왕국 파견 요청 가능</div>
+              <div className="text-forge-text-dim text-xs">
+                {r.kingdomCandidatesWaiting
+                  ? '영주성에 가신 후보가 대기 중입니다. 영입 여부를 결정하세요.'
+                  : '이번 달 왕국 파견 요청이 가능합니다. 영주성 → 가신 목록에서 요청하세요.'}
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* 월 결산 */}
         {r.isMonthlyTurn && (
           <div className={`border rounded-xl p-3 ${r.income < r.salary ? 'bg-red-950/40 border-red-800' : 'bg-green-950/40 border-green-800'}`}>
@@ -105,21 +120,6 @@ export default function TurnReportModal() {
             <div>
               <div className="text-sm font-bold text-forge-text">새 모험가 등장</div>
               <div className="text-forge-text-dim text-xs">{r.newAdventurerName}이(가) 길드에 합류했습니다</div>
-            </div>
-          </div>
-        )}
-
-        {/* 왕국 파견 */}
-        {r.kingdomRequestAvailable && (
-          <div className="bg-purple-950/40 border border-purple-800 rounded-xl p-3 flex items-center gap-3">
-            <span className="text-2xl">👑</span>
-            <div>
-              <div className="text-sm font-bold text-forge-text">왕국 파견 요청</div>
-              <div className="text-forge-text-dim text-xs">
-                {r.kingdomCandidatesWaiting
-                  ? '영주성에 가신 후보가 대기 중입니다. 영입 여부를 결정하세요.'
-                  : '이번 달 왕국 파견 요청이 가능합니다. 영주성에서 가신을 영입할 수 있습니다.'}
-              </div>
             </div>
           </div>
         )}
