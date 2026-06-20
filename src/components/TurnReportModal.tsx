@@ -25,17 +25,14 @@ export default function TurnReportModal() {
 
         {/* 월 결산 */}
         {r.isMonthlyTurn && (
-          <div className={`border rounded-xl p-3 ${r.monthlyReport?.startsWith('⚠️') ? 'bg-red-950/40 border-red-800' : 'bg-green-950/40 border-green-800'}`}>
+          <div className={`border rounded-xl p-3 ${r.income < r.salary ? 'bg-red-950/40 border-red-800' : 'bg-green-950/40 border-green-800'}`}>
             <div className="text-sm font-bold text-forge-text mb-1">📅 월 결산</div>
-            {r.income > 0 && (
-              <div className="text-xs text-forge-text-dim">
-                수입: <span className="text-green-400">+{r.income}G</span>
-                {r.salary > 0 && <> / 봉급: <span className="text-red-400">-{r.salary}G</span> / 순이익: <span className={r.income - r.salary >= 0 ? 'text-green-400' : 'text-red-400'}>{r.income - r.salary >= 0 ? '+' : ''}{r.income - r.salary}G</span></>}
-              </div>
-            )}
-            {r.monthlyReport && (
-              <div className="text-xs text-forge-text mt-1">{r.monthlyReport}</div>
-            )}
+            <div className="text-xs text-forge-text-dim flex flex-col gap-0.5">
+              <span>수입: <span className="text-green-400">+{r.income}G</span></span>
+              {r.salary > 0 && <span>봉급: <span className="text-red-400">-{r.salary}G</span></span>}
+              <span>순이익: <span className={r.income - r.salary >= 0 ? 'text-green-400 font-bold' : 'text-red-400 font-bold'}>{r.income - r.salary >= 0 ? '+' : ''}{r.income - r.salary}G</span></span>
+              {r.income < r.salary && <span className="text-red-300 mt-1">⚠️ 봉급 미지급 — 가신 충성도 하락</span>}
+            </div>
           </div>
         )}
 
@@ -65,6 +62,27 @@ export default function TurnReportModal() {
             <div>
               <div className="text-sm font-bold text-forge-text">상인 방문</div>
               <div className="text-forge-text-dim text-xs">{r.merchantVisited.join(', ')}의 새 상품이 도착했습니다</div>
+            </div>
+          </div>
+        )}
+
+        {/* 모험가 현황 */}
+        {r.adventurerStatuses.length > 0 && (
+          <div className="bg-forge-card border border-forge-border rounded-xl p-3">
+            <div className="text-sm font-bold text-forge-text mb-2">⚔️ 모험가 현황</div>
+            <div className="flex flex-col gap-1">
+              {r.adventurerStatuses.map(a => (
+                <div key={a.name} className="flex items-center justify-between text-xs">
+                  <span className="text-forge-text">{a.name}</span>
+                  {a.status === 'dispatched' ? (
+                    <span className="text-blue-400">🗺 파견 중 ({a.regionName ?? '?'}, {a.returnsOnTurn}턴 귀환)</span>
+                  ) : a.status === 'injured' ? (
+                    <span className="text-red-400">🩹 부상 중</span>
+                  ) : (
+                    <span className="text-green-400">✅ 파견 가능</span>
+                  )}
+                </div>
+              ))}
             </div>
           </div>
         )}

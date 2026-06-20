@@ -7,7 +7,7 @@ import {
   GRADE_BUY_PRICE, GRADE_SELL_PRICE, LEVEL_PRICE_MULTIPLIER, WallState,
   WALL_MAX_DURABILITY, WALL_UPGRADE_COST, WALL_REPAIR_COST_PER_POINT,
   WALL_DEFENSE_POWER, WALL_MAX_LEVEL, GradeType, StatGrade, CharacterClass,
-  WAVE_SCHEDULE, TurnReport,
+  WAVE_SCHEDULE, TurnReport, TurnReportAdventurer,
 } from '../types'
 import { STARTING_EQUIPMENT } from '../data/startingEquipment'
 import { STARTING_ADVENTURERS } from '../data/adventurers'
@@ -364,11 +364,20 @@ export const useGameStore = create<GameState>((set, get) => ({
     // 웨이브 경고
     const waveWarning = pendingWaveEvent
 
+    // 모험가 상태 목록 (파견중/부상/대기)
+    const adventurerStatuses: TurnReportAdventurer[] = finalAdventurers.map(a => {
+      if (a.dispatchedRegionId) {
+        const region = state.regions.find(r => r.id === a.dispatchedRegionId)
+        const returnsOnTurn = region?.currentExpedition?.returnsOnTurn ?? null
+        return { name: a.name, status: a.status, regionName: region?.name ?? null, returnsOnTurn }
+      }
+      return { name: a.name, status: a.status, regionName: null, returnsOnTurn: null }
+    })
+
     const turnReport: TurnReport = {
       turn: nextTurn,
       divinePowerGain: recovery,
       newDivinePower: newDivinePower,
-      monthlyReport: monthlyReport,
       isMonthlyTurn: nextTurn % 4 === 0,
       income: reportIncome,
       salary: reportSalary,
@@ -379,6 +388,7 @@ export const useGameStore = create<GameState>((set, get) => ({
         reward: c.rewardGold,
       })),
       merchantVisited,
+      adventurerStatuses,
       adventurerRecovered: recoveredAdventurers,
       newAdventurerName,
       kingdomRequestAvailable,

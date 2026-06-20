@@ -75,7 +75,7 @@ export default function TerritoryHub() {
     setScreen, advanceTurn,
     week, month, year,
     gold, baseTerritoryIncome, waveDefenseBonus, regions,
-    lastMonthlyReport, clearMonthlyReport,
+
     nextWaveTurn, turn, waveNumber,
     tutorialSeen,
   } = useGameStore()
@@ -97,24 +97,6 @@ export default function TerritoryHub() {
       className="flex-1 flex flex-col items-center justify-between p-6 relative"
       style={{ background: 'radial-gradient(ellipse at center, #1a1208 0%, #0d0b08 100%)' }}
     >
-      {/* ===== 월 결산 팝업 ===== */}
-      {lastMonthlyReport && (
-        <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/70">
-          <div className="bg-forge-card border-2 border-forge-gold rounded-xl p-6 max-w-sm w-full mx-4 shadow-2xl">
-            <h3 className="text-forge-gold font-bold text-lg mb-3 text-center">📅 월 결산</h3>
-            <p className="text-forge-text text-sm leading-relaxed text-center mb-4">
-              {lastMonthlyReport}
-            </p>
-            <button
-              onClick={clearMonthlyReport}
-              className="w-full bg-forge-gold text-forge-bg font-bold py-2 rounded-lg hover:bg-forge-gold-light transition-colors"
-            >
-              확인
-            </button>
-          </div>
-        </div>
-      )}
-
       {/* 헤더 */}
       <div className="text-center mb-4">
         <h2 className="text-forge-gold text-2xl font-bold tracking-widest">

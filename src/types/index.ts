@@ -621,16 +621,23 @@ export interface TurnReportCommission {
   reward: number
 }
 
+export interface TurnReportAdventurer {
+  name: string
+  status: 'available' | 'dispatched' | 'injured'
+  regionName: string | null
+  returnsOnTurn: number | null
+}
+
 export interface TurnReport {
   turn: number
   divinePowerGain: number
   newDivinePower: number
-  monthlyReport: string | null
   isMonthlyTurn: boolean
   income: number
   salary: number
   newCommissions: TurnReportCommission[]
   merchantVisited: string[]
+  adventurerStatuses: TurnReportAdventurer[]
   adventurerRecovered: string[]
   newAdventurerName: string | null
   kingdomRequestAvailable: boolean
