@@ -8,7 +8,7 @@ export const GRADE_CONFIGS: Record<string, GradeConfig> = {
   common: {
     grade: 'common',
     maxLevel: 9,
-    probabilities: [80, 75, 70, 60, 50, 40, 30, 20, 10],
+    probabilities: [90, 85, 80, 70, 60, 50, 40, 30, 20],
     penalties: [],
     godComments: {
       success: [
@@ -30,7 +30,7 @@ export const GRADE_CONFIGS: Record<string, GradeConfig> = {
   fine: {
     grade: 'fine',
     maxLevel: 12,
-    probabilities: [75, 70, 60, 50, 40, 30, 20, 15, 10, 7, 4, 2],
+    probabilities: [85, 80, 70, 60, 50, 40, 30, 25, 20, 17, 14, 12],
     penalties: [
       { fromLevel: 8, toLevel: -1, penaltyType: 'LEVEL_DOWN', magnitude: 1, triggerChance: 100 },
     ],

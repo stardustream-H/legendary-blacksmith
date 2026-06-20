@@ -1,10 +1,11 @@
-import { EquipmentInstance, EnhancementResult, PenaltyType, GradeConfig, MAX_FAILURES_BY_GRADE } from '../types'
+import { EquipmentInstance, EnhancementResult, PenaltyType, GradeConfig, GradeType, MAX_FAILURES_BY_GRADE, DIVINE_RANK_PROB_BONUS } from '../types'
 import { GRADE_CONFIGS } from '../data/gradeConfigs'
 
 // ===== 확률 계산 =====
 export function getEnhancementProbability(
   equipment: EquipmentInstance,
-  divinePowerBoost: number = 0
+  divinePowerBoost: number = 0,
+  divineRankTier: number = 0
 ): number {
   const config = GRADE_CONFIGS[equipment.grade]
   if (!config) return 0
@@ -12,8 +13,9 @@ export function getEnhancementProbability(
   const level = equipment.currentLevel
   const probs = config.probabilities
   const baseProbability = level < probs.length ? probs[level] : probs[probs.length - 1]
+  const rankBonus = DIVINE_RANK_PROB_BONUS[divineRankTier]?.[equipment.grade as GradeType] ?? 0
 
-  return Math.min(100, baseProbability + divinePowerBoost)
+  return Math.min(100, baseProbability + divinePowerBoost + rankBonus)
 }
 
 // ===== 최대 실패 한도 확인 =====
@@ -29,10 +31,6 @@ export function canEnhance(equipment: EquipmentInstance): { ok: boolean; reason:
   if (equipment.enhancementLockTurns > 0) {
     return { ok: false, reason: `${equipment.enhancementLockTurns}턴 강화 잠금` }
   }
-  const maxFail = getMaxFailures(equipment.grade)
-  if (equipment.failureCount >= maxFail) {
-    return { ok: false, reason: `실패 한도 초과 (${equipment.failureCount}/${maxFail}회)` }
-  }
   return { ok: true, reason: '' }
 }
 
@@ -43,8 +41,9 @@ export function attemptEnhancement(
   divinePowerBoost: number = 0,
   destroyProtection: boolean = false,
   levelDropProtection: boolean = false,
+  divineRankTier: number = 0,
 ): EnhancementResult {
-  const probability = getEnhancementProbability(equipment, divinePowerBoost)
+  const probability = getEnhancementProbability(equipment, divinePowerBoost, divineRankTier)
   const roll = Math.random() * 100
   const previousLevel = equipment.currentLevel
 

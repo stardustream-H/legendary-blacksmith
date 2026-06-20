@@ -100,16 +100,24 @@ function RegionCard({
 }: { region: Region; selected: boolean; onClick: () => void; currentTurn: number }) {
   const hasActiveExp = region.currentExpedition !== null
   const canReceive = hasActiveExp && region.currentExpedition!.returnsOnTurn <= currentTurn
+  const isLocked = region.status === 'locked'
 
   return (
     <button
-      onClick={onClick}
-      className={`text-left p-3 rounded-lg border transition-all ${
-        selected ? 'border-forge-gold bg-forge-card' : 'border-forge-border bg-forge-card hover:border-forge-gold/50'
+      onClick={isLocked ? undefined : onClick}
+      disabled={isLocked}
+      className={`text-left p-3 rounded-lg border transition-all w-full ${
+        isLocked
+          ? 'border-forge-border/40 bg-forge-card/30 opacity-50 cursor-not-allowed'
+          : selected
+          ? 'border-forge-gold bg-forge-card'
+          : 'border-forge-border bg-forge-card hover:border-forge-gold/50'
       }`}
     >
       <div className="flex items-center justify-between mb-1">
-        <span className="font-bold text-sm text-forge-text">{region.name}</span>
+        <span className={`font-bold text-sm ${isLocked ? 'text-forge-text-dim' : 'text-forge-text'}`}>
+          {isLocked ? '🔒 ' : ''}{region.name}
+        </span>
         {region.status === 'liberated' && (
           <span className="text-xs text-green-400 font-bold">해방</span>
         )}
@@ -122,17 +130,23 @@ function RegionCard({
           </span>
         )}
       </div>
-      <div className="text-forge-text-dim text-xs mb-2">난이도 {'★'.repeat(Math.ceil(region.difficulty / 2))}</div>
-      <div className="w-full bg-gray-800 rounded-full h-1.5">
-        <div
-          className="h-1.5 rounded-full transition-all duration-500"
-          style={{
-            width: `${region.liberationProgress}%`,
-            background: region.status === 'liberated' ? '#22c55e' : '#c9a227',
-          }}
-        />
-      </div>
-      <div className="text-xs text-forge-text-dim mt-1">{region.liberationProgress}% 해방</div>
+      {isLocked ? (
+        <div className="text-forge-text-dim text-xs">조건을 충족해야 개방됩니다</div>
+      ) : (
+        <>
+          <div className="text-forge-text-dim text-xs mb-2">난이도 {'★'.repeat(Math.ceil(region.difficulty / 2))}</div>
+          <div className="w-full bg-gray-800 rounded-full h-1.5">
+            <div
+              className="h-1.5 rounded-full transition-all duration-500"
+              style={{
+                width: `${region.liberationProgress}%`,
+                background: region.status === 'liberated' ? '#22c55e' : '#c9a227',
+              }}
+            />
+          </div>
+          <div className="text-xs text-forge-text-dim mt-1">{region.liberationProgress}% 해방</div>
+        </>
+      )}
     </button>
   )
 }
@@ -319,7 +333,9 @@ export default function GuildScreen() {
   } = useGameStore()
 
   const [activeTab, setActiveTab] = useState<GuildTab>('regions')
-  const [selectedRegionId, setSelectedRegionId] = useState<string | null>(regions[0]?.id ?? null)
+  const [selectedRegionId, setSelectedRegionId] = useState<string | null>(
+    regions.find(r => r.status === 'available')?.id ?? regions[0]?.id ?? null
+  )
   const [detailAdventurerId, setDetailAdventurerId] = useState<string | null>(null)
 
   const selectedRegion = regions.find(r => r.id === selectedRegionId)
@@ -365,7 +381,7 @@ export default function GuildScreen() {
         <div className="flex gap-4 flex-1 overflow-hidden">
           {/* 좌: 지역 목록 */}
           <div className="w-52 flex flex-col gap-2 overflow-y-auto">
-            {regions.map(r => (
+            {regions.filter(r => r.status !== 'hidden').map(r => (
               <RegionCard
                 key={r.id}
                 region={r}

@@ -1,5 +1,6 @@
 import { useGameStore } from '../store/gameStore'
 import { ScreenType } from '../types'
+import TutorialOverlay from './TutorialOverlay'
 
 interface Building {
   id: ScreenType
@@ -44,12 +45,28 @@ const BUILDINGS: Building[] = [
     position: 'col-start-1 row-start-3',
   },
   {
+    id: 'barracks',
+    name: '병영',
+    icon: '🏰',
+    description: '수비 병력 해금 및 강화',
+    locked: false,
+    position: 'col-start-3 row-start-3',
+  },
+  {
     id: 'defense',
     name: '방어 시설',
     icon: '🛡️',
     description: '영지 수비력 확인 및 강화',
     locked: false,
     position: 'col-start-4 row-start-3',
+  },
+  {
+    id: 'temple',
+    name: '버려진 신전',
+    icon: '🏛️',
+    description: '오래전부터 방치된 낡은 신전',
+    locked: false,
+    position: 'col-start-2 row-start-3',
   },
 ]
 
@@ -60,6 +77,7 @@ export default function TerritoryHub() {
     gold, baseTerritoryIncome, waveDefenseBonus, regions,
     lastMonthlyReport, clearMonthlyReport,
     nextWaveTurn, turn, waveNumber,
+    tutorialSeen,
   } = useGameStore()
 
   // 월 수입 미리보기
@@ -73,6 +91,8 @@ export default function TerritoryHub() {
   const waveUrgent = turnsUntilWave <= 4
 
   return (
+    <>
+    {!tutorialSeen && <TutorialOverlay />}
     <div
       className="flex-1 flex flex-col items-center justify-between p-6 relative"
       style={{ background: 'radial-gradient(ellipse at center, #1a1208 0%, #0d0b08 100%)' }}
@@ -179,5 +199,6 @@ export default function TerritoryHub() {
         </p>
       </div>
     </div>
+  </>
   )
 }

@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { useGameStore } from '../store/gameStore'
+import { TROOP_CONFIGS, calcTroopPower } from '../data/barracksData'
 import {
   TroopType, TROOP_TYPE_NAMES,
   CHARACTER_CLASS_NAMES, STAT_GRADE_COLORS, STAT_GRADE_VALUE, STAT_NAMES,
@@ -190,7 +191,7 @@ function KingdomDispatchModal({ onClose }: { onClose: () => void }) {
 
 // ===== 메인 화면 =====
 export default function TerritoryScreen() {
-  const { retainers, troopSlots, assignCommander, setScreen, turn, lastKingdomRequestMonth, kingdomCandidates } = useGameStore()
+  const { retainers, troopSlots, assignCommander, setScreen, turn, lastKingdomRequestMonth, kingdomCandidates, barracks } = useGameStore()
   const [activeTab, setActiveTab] = useState<TerritoryTab>('retainers')
   const [detailRetainerId, setDetailRetainerId] = useState<string | null>(null)
   const [assigningTroopId, setAssigningTroopId] = useState<string | null>(null)
@@ -277,6 +278,29 @@ export default function TerritoryScreen() {
             <p className="text-forge-text-dim text-xs text-center">
               각 병력 슬롯을 눌러 지휘관을 임명하세요
             </p>
+            {/* 병영 상주 병력 */}
+            <div className="bg-forge-card border border-forge-border rounded-xl p-4">
+              <div className="font-bold text-forge-text text-sm mb-3">🏰 병영 상주 병력</div>
+              <div className="grid grid-cols-2 gap-2">
+                {barracks.map(troop => {
+                  const cfg = TROOP_CONFIGS.find(c => c.type === troop.type)
+                  if (!cfg) return null
+                  const power = calcTroopPower(troop)
+                  const isLocked = troop.tier === 0
+                  return (
+                    <div key={troop.type} className={`flex items-center gap-2 p-2 rounded-lg ${isLocked ? 'opacity-40' : 'bg-black/20'}`}>
+                      <span className="text-xl">{cfg.icon}</span>
+                      <div className="flex-1 min-w-0">
+                        <div className="text-xs font-bold text-forge-text truncate">{cfg.name}</div>
+                        <div className="text-xs text-forge-text-dim">
+                          {isLocked ? '🔒 미해금' : `${troop.tier}단계 · 방어력 ${power}`}
+                        </div>
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
             {troopSlots.map(slot => {
               const commander = slot.commanderId
                 ? retainers.find(r => r.id === slot.commanderId)

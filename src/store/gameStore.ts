@@ -3,14 +3,17 @@ import {
   EquipmentInstance, ScreenType, EnhancementResult, Commission,
   Adventurer, Region, ExpeditionResult, Retainer, TroopSlot, WaveResult,
   STAT_GRADE_VALUE, TROOP_TYPE_NAMES, MerchantGuild, ShopItem,
-  GRADE_BUY_PRICE, GRADE_SELL_PRICE, WallState,
+  DIVINE_TURN_RECOVERY, DIVINE_RANK_TIERS, BarracksTroop, BarracksTroopType,
+  GRADE_BUY_PRICE, GRADE_SELL_PRICE, LEVEL_PRICE_MULTIPLIER, WallState,
   WALL_MAX_DURABILITY, WALL_UPGRADE_COST, WALL_REPAIR_COST_PER_POINT,
   WALL_DEFENSE_POWER, WALL_MAX_LEVEL, GradeType, StatGrade, CharacterClass,
+  WAVE_SCHEDULE, TurnReport,
 } from '../types'
 import { STARTING_EQUIPMENT } from '../data/startingEquipment'
 import { STARTING_ADVENTURERS } from '../data/adventurers'
 import { STARTING_REGIONS } from '../data/regions'
 import { STARTING_RETAINERS, STARTING_TROOP_SLOTS } from '../data/retainers'
+import { STARTING_BARRACKS, TROOP_CONFIGS, calcTotalBarracksPower } from '../data/barracksData'
 import { STARTING_MERCHANT_GUILDS } from '../data/shop'
 import { generateCommissions } from '../systems/commissionSystem'
 import {
@@ -78,9 +81,8 @@ function calcTroopPower(slot: TroopSlot, retainers: Retainer[]): number {
   return prof * 15 + cour * 10 + 20 // 지휘관 보너스
 }
 
-function calcEnemyStrength(waveNumber: number): number {
-  // 1웨이브: 80, 이후 +40씩 증가
-  return 60 + waveNumber * 40
+function getWaveEntry(waveNumber: number) {
+  return WAVE_SCHEDULE[waveNumber - 1] ?? WAVE_SCHEDULE[WAVE_SCHEDULE.length - 1]
 }
 
 interface GameState {
@@ -99,12 +101,12 @@ interface GameState {
   gold: number
   divineRank: number
   divinePower: number
-  maxDivinePower: number
   addGold: (amount: number) => void
   spendGold: (amount: number) => boolean
   addDivinePower: (amount: number) => void
   spendDivinePower: (amount: number) => boolean
   adjustDivineRank: (delta: number) => void
+  upgradeDivineRank: () => boolean
 
   // ===== 장비 =====
   equipment: EquipmentInstance[]
@@ -145,6 +147,8 @@ interface GameState {
   // ===== 영지 가신단 =====
   retainers: Retainer[]
   troopSlots: TroopSlot[]
+  barracks: BarracksTroop[]
+  unlockOrUpgradeTroop: (type: BarracksTroopType) => boolean
   equipWeapon: (retainerId: string, equipmentId: string | null) => void
   equipArmor: (retainerId: string, equipmentId: string | null) => void
   assignCommander: (troopSlotId: string, retainerId: string | null) => void
@@ -160,6 +164,8 @@ interface GameState {
   // ===== 웨이브 시스템 =====
   nextWaveTurn: number
   waveNumber: number       // 처리된 웨이브 수
+  pendingTurnReport: TurnReport | null
+  clearTurnReport: () => void
   pendingWaveEvent: boolean
   waveResult: WaveResult | null
   resolveWave: () => void
@@ -179,8 +185,10 @@ interface GameState {
   // ===== 게임 상태 =====
   isGameOver: boolean
   isClear: boolean
+  tutorialSeen: boolean
   triggerGameOver: () => void
   triggerClear: () => void
+  completeTutorial: () => void
   resetGame: () => void
 }
 
@@ -193,10 +201,9 @@ const calcDate = (turn: number) => ({
 const initialState = {
   currentScreen: 'title' as ScreenType,
   turn: 1, week: 1, month: 1, year: 1,
-  gold: 500,
-  divineRank: 10,
+  gold: 800,
+  divineRank: 0,
   divinePower: 50,
-  maxDivinePower: 100,
   equipment: [...STARTING_EQUIPMENT],
   selectedEquipmentId: null,
   lastEnhancementResult: null,
@@ -210,17 +217,20 @@ const initialState = {
   kingdomCandidates: [] as Retainer[],
   retainers: [...STARTING_RETAINERS],
   troopSlots: [...STARTING_TROOP_SLOTS],
-  baseTerritoryIncome: 150,
+  barracks: STARTING_BARRACKS.map(t => ({ ...t })),
+  baseTerritoryIncome: 200,
   waveDefenseBonus: 0,
   lastMonthlyReport: null,
   nextWaveTurn: 24,
   waveNumber: 0,
+  pendingTurnReport: null,
   pendingWaveEvent: false,
   waveResult: null as WaveResult | null,
   merchantGuilds: STARTING_MERCHANT_GUILDS.map(g => ({ ...g })),
   wall: { level: 1, durability: 150, maxDurability: 150 } as WallState,
   isGameOver: false,
   isClear: false,
+  tutorialSeen: false,
 }
 
 export const useGameStore = create<GameState>((set, get) => ({
@@ -232,7 +242,8 @@ export const useGameStore = create<GameState>((set, get) => ({
     const state = get()
     const nextTurn = state.turn + 1
     const date = calcDate(nextTurn)
-    const newDivinePower = Math.min(state.divinePower + 5, state.maxDivinePower)
+    const recovery = DIVINE_TURN_RECOVERY[state.divineRank] ?? 6
+    const newDivinePower = state.divinePower + recovery
 
     const updatedEquipment = state.equipment.map((eq) =>
       eq.enhancementLockTurns > 0
@@ -316,6 +327,64 @@ export const useGameStore = create<GameState>((set, get) => ({
       return guild
     })
 
+    // 모험가 회복 목록
+    const recoveredAdventurers = updatedAdventurers
+      .filter(a => {
+        const prev = state.adventurers.find(p => p.id === a.id)
+        return prev && prev.status === 'injured' && a.status === 'available'
+      })
+      .map(a => a.name)
+
+    // 새 모험가
+    const newAdventurerName = finalAdventurers.length > updatedAdventurers.length
+      ? finalAdventurers[finalAdventurers.length - 1].name
+      : null
+
+    // 상인 방문
+    const merchantVisited = updatedGuilds
+      .filter((g, i) => g.inventory.length > 0 && state.merchantGuilds[i].nextVisitTurn === nextTurn)
+      .map(g => g.name)
+
+    // 월 결산 수입
+    let reportIncome = 0
+    let reportSalary = 0
+    if (nextTurn % 4 === 0) {
+      const liberatedIncome = state.regions
+        .filter(r => r.status === 'liberated')
+        .reduce((sum, r) => sum + r.liberationMonthlyIncome, 0)
+      reportIncome = state.baseTerritoryIncome + state.waveDefenseBonus + liberatedIncome
+      reportSalary = state.retainers
+        .filter(r => r.isActive && r.salary > 0)
+        .reduce((sum, r) => sum + r.salary, 0)
+    }
+
+    // 왕국 파견 가능 여부
+    const kingdomRequestAvailable = state.kingdomCandidates.length > 0
+
+    // 웨이브 경고
+    const waveWarning = pendingWaveEvent
+
+    const turnReport: TurnReport = {
+      turn: nextTurn,
+      divinePowerGain: recovery,
+      newDivinePower: newDivinePower,
+      monthlyReport: monthlyReport,
+      isMonthlyTurn: nextTurn % 4 === 0,
+      income: reportIncome,
+      salary: reportSalary,
+      newCommissions: newCommissions.map(c => ({
+        id: c.id,
+        name: c.equipment.name,
+        grade: c.grade,
+        reward: c.rewardGold,
+      })),
+      merchantVisited,
+      adventurerRecovered: recoveredAdventurers,
+      newAdventurerName,
+      kingdomRequestAvailable,
+      waveWarning,
+    }
+
     set({
       turn: nextTurn, ...date,
       divinePower: newDivinePower,
@@ -329,9 +398,11 @@ export const useGameStore = create<GameState>((set, get) => ({
       lastMonthlyReport: monthlyReport,
       pendingWaveEvent: pendingWaveEvent ? true : state.pendingWaveEvent,
       merchantGuilds: updatedGuilds,
+      pendingTurnReport: turnReport,
     })
   },
 
+  clearTurnReport: () => set({ pendingTurnReport: null }),
   addGold: (amount) => set((s) => ({ gold: s.gold + amount })),
   spendGold: (amount) => {
     if (get().gold < amount) return false
@@ -339,14 +410,39 @@ export const useGameStore = create<GameState>((set, get) => ({
     return true
   },
   addDivinePower: (amount) =>
-    set((s) => ({ divinePower: Math.min(s.divinePower + amount, s.maxDivinePower) })),
+    set((s) => ({ divinePower: s.divinePower + amount })),
   spendDivinePower: (amount) => {
     if (get().divinePower < amount) return false
     set((s) => ({ divinePower: s.divinePower - amount }))
     return true
   },
   adjustDivineRank: (delta) =>
-    set((s) => ({ divineRank: Math.max(0, Math.min(100, s.divineRank + delta)) })),
+    set((s) => ({ divinePower: Math.max(0, s.divinePower + delta) })),
+  unlockOrUpgradeTroop: (type) => {
+    const state = get()
+    const troop = state.barracks.find(t => t.type === type)
+    const cfg = TROOP_CONFIGS.find(c => c.type === type)
+    if (!troop || !cfg) return false
+    const nextTier = troop.tier + 1
+    if (nextTier > 3) return false
+    const cost = cfg.upgradeCosts[nextTier - 1]
+    if (cost > 0 && state.gold < cost) return false
+    if (cost > 0) get().spendGold(cost)
+    set((s) => ({
+      barracks: s.barracks.map(t =>
+        t.type === type ? { ...t, tier: nextTier } : t
+      ),
+    }))
+    return true
+  },
+  upgradeDivineRank: () => {
+    const state = get()
+    if (state.divineRank >= 6) return false
+    const nextTier = DIVINE_RANK_TIERS[state.divineRank + 1]
+    if (!nextTier || state.divinePower < nextTier.upgradeCost) return false
+    set((s) => ({ divineRank: s.divineRank + 1, divinePower: s.divinePower - nextTier.upgradeCost }))
+    return true
+  },
 
   selectEquipment: (id) => set({ selectedEquipmentId: id }),
   updateEquipment: (updated) =>
@@ -443,12 +539,34 @@ export const useGameStore = create<GameState>((set, get) => ({
         : s.equipment.filter(eq => eq.id !== baseResult.lostEquipmentId)
       if (liberationRewardEquipment.length > 0) newEquipment = [...newEquipment, ...liberationRewardEquipment]
 
+      // 이 지역이 해방되면 업데이트된 지역 목록으로 잠금 해제 체크
+      const updatedRegions = s.regions.map(r =>
+        r.id === regionId
+          ? { ...r, liberationProgress: newProgress, status: newStatus, currentExpedition: null }
+          : r
+      )
+
+      // 잠금 해제 로직: unlockRequires 조건 충족 시 locked → available, hidden → available
+      const liberatedIds = new Set(updatedRegions.filter(r => r.status === 'liberated').map(r => r.id))
+      const unlockedRegions = updatedRegions.map(r => {
+        if ((r.status === 'locked' || r.status === 'hidden') && r.unlockRequires && r.unlockRequires.length > 0) {
+          const mode = r.unlockMode ?? 'any'
+          const meetsCondition = mode === 'all'
+            ? r.unlockRequires.every(reqId => liberatedIds.has(reqId))
+            : r.unlockRequires.some(reqId => liberatedIds.has(reqId))
+          if (meetsCondition) {
+            return { ...r, status: 'available' as const }
+          }
+        }
+        return r
+      })
+
+      // 진엔딩: isTrueEndingTrigger 지역이 방금 해방됐는지 체크
+      const justTriggeredTrueEnding = justLiberated &&
+        region.isTrueEndingTrigger === true
+
       return {
-        regions: s.regions.map(r =>
-          r.id === regionId
-            ? { ...r, liberationProgress: newProgress, status: newStatus, currentExpedition: null }
-            : r
-        ),
+        regions: unlockedRegions,
         equipment: newEquipment,
         adventurers: s.adventurers.map(a => {
           if (!expedition.partyIds.includes(a.id)) return a
@@ -462,6 +580,7 @@ export const useGameStore = create<GameState>((set, get) => ({
           }
         }),
         pendingExpeditionResult: { ...baseResult, justLiberated, liberationRewardEquipment },
+        ...(justTriggeredTrueEnding ? { isClear: true } : {}),
       }
     })
   },
@@ -505,7 +624,9 @@ export const useGameStore = create<GameState>((set, get) => ({
   resolveWave: () => {
     const state = get()
     const waveNumber = state.waveNumber + 1
-    const enemyStrength = calcEnemyStrength(waveNumber)
+    const entry = getWaveEntry(waveNumber)
+    const enemyStrength = entry.enemyStrength
+    const isFinalWave = entry.isFinal === true
 
     // 병력 전투력 계산
     const combatDetails = state.troopSlots.map(slot => {
@@ -521,10 +642,11 @@ export const useGameStore = create<GameState>((set, get) => ({
       }
     })
     const troopPower = combatDetails.reduce((sum, d) => sum + d.power, 0)
+    const barracksPower = calcTotalBarracksPower(state.barracks)
 
     // 성벽 방어력 추가
     const wallPower = WALL_DEFENSE_POWER(state.wall.level, state.wall.durability, state.wall.maxDurability)
-    const defensePower = troopPower + wallPower
+    const defensePower = troopPower + wallPower + barracksPower
 
     // 성벽 내구도 소모 (적 전력의 25%, 최소 10)
     const durabilityDamage = Math.max(10, Math.floor(enemyStrength * 0.25))
@@ -536,17 +658,23 @@ export const useGameStore = create<GameState>((set, get) => ({
     let waveDefenseBonusGained = 0
 
     if (outcome === 'victory') {
-      waveDefenseBonusGained = 30
-      goldChange = 50 + waveNumber * 20
-      divineRankChange = 2
+      waveDefenseBonusGained = isFinalWave ? 0 : 30
+      goldChange = isFinalWave ? 0 : 50 + waveNumber * 20
+      divineRankChange = isFinalWave ? 0 : 20
     } else {
-      goldChange = -(100 + waveNumber * 30)
-      divineRankChange = -5
+      if (isFinalWave) {
+        // 최종 웨이브 패배 = 게임 오버
+        goldChange = 0
+        divineRankChange = 0
+      } else {
+        goldChange = -(100 + waveNumber * 30)
+        divineRankChange = -30
+      }
     }
 
-    // 다음 웨이브 타이밍 (16턴 간격, 점점 좁아짐)
-    const nextInterval = Math.max(8, 16 - waveNumber * 2)
-    const nextWaveTurn = state.nextWaveTurn + nextInterval
+    // 다음 웨이브 타이밍 — WAVE_SCHEDULE 기반
+    const nextEntry = WAVE_SCHEDULE[waveNumber] // waveNumber는 이미 +1된 상태, 다음 인덱스
+    const nextWaveTurn = nextEntry ? nextEntry.triggerTurn : 9999
 
     const result: WaveResult = {
       waveNumber,
@@ -554,18 +682,55 @@ export const useGameStore = create<GameState>((set, get) => ({
       defensePower,
       outcome,
       goldChange,
-      divineRankChange,
+      divinePowerChange: divineRankChange,
       waveDefenseBonusGained,
       combatDetails,
+      waveName: entry.name,
+      isFinalWave,
+    }
+
+    // 최종 웨이브 패배 시 게임 오버 처리
+    if (isFinalWave && outcome === 'defeat') {
+      set((s) => ({
+        waveNumber,
+        nextWaveTurn,
+        pendingTurnReport: null,
+  pendingWaveEvent: false,
+        waveResult: result,
+        gold: Math.max(0, s.gold + goldChange),
+        divinePower: Math.max(0, s.divinePower + divineRankChange),
+        waveDefenseBonus: s.waveDefenseBonus + waveDefenseBonusGained,
+        wall: { ...s.wall, durability: newDurability },
+        isGameOver: true,
+      }))
+      return
+    }
+
+    // 최종 웨이브 승리 시 클리어 처리
+    if (isFinalWave && outcome === 'victory') {
+      set((s) => ({
+        waveNumber,
+        nextWaveTurn,
+        pendingTurnReport: null,
+  pendingWaveEvent: false,
+        waveResult: result,
+        gold: Math.max(0, s.gold + goldChange),
+        divinePower: Math.max(0, s.divinePower + divineRankChange),
+        waveDefenseBonus: s.waveDefenseBonus + waveDefenseBonusGained,
+        wall: { ...s.wall, durability: newDurability },
+        isClear: true,
+      }))
+      return
     }
 
     set((s) => ({
       waveNumber,
       nextWaveTurn,
-      pendingWaveEvent: false,
+      pendingTurnReport: null,
+  pendingWaveEvent: false,
       waveResult: result,
       gold: Math.max(0, s.gold + goldChange),
-      divineRank: Math.max(0, Math.min(100, s.divineRank + divineRankChange)),
+      divinePower: Math.max(0, s.divinePower + divineRankChange),
       waveDefenseBonus: s.waveDefenseBonus + waveDefenseBonusGained,
       wall: { ...s.wall, durability: newDurability },
     }))
@@ -578,7 +743,8 @@ export const useGameStore = create<GameState>((set, get) => ({
     const eq = state.equipment.find(e => e.id === equipmentId)
     if (!eq || !eq.isOwned) return
     const base = GRADE_SELL_PRICE[eq.grade as GradeType] ?? 30
-    const sellPrice = base + eq.currentLevel * 25
+    const levelIdx = Math.min(eq.currentLevel, LEVEL_PRICE_MULTIPLIER.length - 1)
+    const sellPrice = Math.floor(base * LEVEL_PRICE_MULTIPLIER[levelIdx])
     get().addGold(sellPrice)
     set((s) => ({
       equipment: s.equipment.filter(e => e.id !== equipmentId),
@@ -688,6 +854,7 @@ export const useGameStore = create<GameState>((set, get) => ({
 
   triggerGameOver: () => set({ isGameOver: true }),
   triggerClear: () => set({ isClear: true }),
+  completeTutorial: () => set({ tutorialSeen: true }),
   resetGame: () =>
     set({
       ...initialState,
@@ -696,6 +863,7 @@ export const useGameStore = create<GameState>((set, get) => ({
       regions: STARTING_REGIONS.map(r => ({ ...r })),
       retainers: [...STARTING_RETAINERS],
       troopSlots: [...STARTING_TROOP_SLOTS],
+      barracks: STARTING_BARRACKS.map(t => ({ ...t })),
       commissions: [],
       merchantGuilds: STARTING_MERCHANT_GUILDS.map(g => ({ ...g })),
       wall: { level: 1, durability: 150, maxDurability: 150 },

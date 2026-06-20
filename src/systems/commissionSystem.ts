@@ -6,11 +6,12 @@ function genId() { return `comm_${idCounter++}` }
 function genEqId() { return `ceq_${idCounter++}` }
 
 const GRADE_POOL_BY_RANK: { minRank: number; grades: GradeType[] }[] = [
-  { minRank: 0,  grades: ['common', 'common', 'common', 'fine'] },
-  { minRank: 20, grades: ['common', 'fine', 'fine', 'rare'] },
-  { minRank: 40, grades: ['fine', 'rare', 'rare', 'hero'] },
-  { minRank: 60, grades: ['rare', 'hero', 'hero', 'legendary'] },
-  { minRank: 80, grades: ['hero', 'legendary', 'legendary', 'legendary_relic'] },
+  { minRank: 0, grades: ['common', 'common', 'common', 'fine'] },
+  { minRank: 1, grades: ['common', 'fine', 'fine', 'rare'] },
+  { minRank: 2, grades: ['fine', 'fine', 'rare', 'rare'] },
+  { minRank: 3, grades: ['fine', 'rare', 'rare', 'hero'] },
+  { minRank: 4, grades: ['rare', 'hero', 'hero', 'legendary'] },
+  { minRank: 5, grades: ['hero', 'legendary', 'legendary', 'legendary_relic'] },
 ]
 
 const EQUIPMENT_NAMES: Partial<Record<GradeType, string[]>> = {
@@ -60,7 +61,7 @@ function gradeMultiplier(grade: GradeType): number {
 }
 
 export function generateCommissions(divineRank: number, turn: number): Commission[] {
-  const baseCount = divineRank < 20 ? 2 : divineRank < 50 ? 3 : 4
+  const baseCount = divineRank <= 1 ? 2 : divineRank <= 4 ? 3 : 4
   const pool = [...GRADE_POOL_BY_RANK].reverse().find((p) => divineRank >= p.minRank)
     ?? GRADE_POOL_BY_RANK[0]
 
@@ -76,8 +77,8 @@ export function generateCommissions(divineRank: number, turn: number): Commissio
     const commGrade: CommissionGrade =
       gradeRoll > 0.9 ? 'premium' : gradeRoll > 0.75 ? 'urgent' : 'normal'
 
-    const baseGold = Math.floor(50 * mult * (commGrade === 'premium' ? 3 : commGrade === 'urgent' ? 1.8 : 1))
-    const basePower = Math.floor(10 * mult * (commGrade === 'premium' ? 2 : 1))
+    const baseGold = Math.floor(70 * mult * (commGrade === 'premium' ? 3 : commGrade === 'urgent' ? 1.8 : 1))
+    const basePower = Math.floor(12 * mult * (commGrade === 'premium' ? 2 : 1))
 
     const targetLevel = type === 'enhance'
       ? Math.min(equipment.maxLevel, equipment.currentLevel + 1 + Math.floor(Math.random() * 3))
@@ -97,7 +98,7 @@ export function generateCommissions(divineRank: number, turn: number): Commissio
     })
   }
 
-  if (turn % 10 === 0 && divineRank >= 20) {
+  if (turn % 10 === 0 && divineRank >= 2) {
     const grade = pickRandom(pool.grades)
     const equipment = generateCommissionEquipment(grade)
     const mult = gradeMultiplier(grade)
@@ -106,7 +107,7 @@ export function generateCommissions(divineRank: number, turn: number): Commissio
       equipment,
       type: 'enhance',
       targetLevel: Math.min(equipment.maxLevel, equipment.currentLevel + 3),
-      rewardGold: Math.floor(200 * mult),
+      rewardGold: Math.floor(280 * mult),
       rewardDivinePower: Math.floor(30 * mult),
       grade: 'premium',
       accepted: false,

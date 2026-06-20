@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useGameStore } from '../store/gameStore'
-import { GRADE_NAMES, GRADE_COLORS, EQUIPMENT_TYPE_NAMES, GRADE_SELL_PRICE, GradeType } from '../types'
+import { GRADE_NAMES, GRADE_COLORS, EQUIPMENT_TYPE_NAMES, GRADE_SELL_PRICE, LEVEL_PRICE_MULTIPLIER, GradeType } from '../types'
 
 type ShopTab = 'buy' | 'sell'
 
@@ -20,8 +20,11 @@ export default function ShopScreen() {
 
   const sellableItems = equipment.filter(eq => eq.isOwned)
 
-  const getSellPrice = (grade: GradeType, level: number) =>
-    (GRADE_SELL_PRICE[grade] ?? 30) + level * 25
+  const getSellPrice = (grade: GradeType, level: number) => {
+    const base = GRADE_SELL_PRICE[grade] ?? 30
+    const levelIdx = Math.min(level, LEVEL_PRICE_MULTIPLIER.length - 1)
+    return Math.floor(base * LEVEL_PRICE_MULTIPLIER[levelIdx])
+  }
 
   return (
     <div className="flex-1 flex flex-col bg-forge-bg text-forge-text overflow-hidden">

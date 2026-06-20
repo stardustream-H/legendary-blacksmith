@@ -1,7 +1,9 @@
 import { useGameStore } from '../store/gameStore'
+import { DIVINE_RANK_TIERS } from '../types'
 
 export default function TopBar() {
-  const { turn, week, month, year, gold, divineRank, divinePower, maxDivinePower } = useGameStore()
+  const { turn, week, month, year, gold, divineRank, divinePower } = useGameStore()
+  const tierName = DIVINE_RANK_TIERS[divineRank]?.name ?? '잊혀진 신'
 
   return (
     <div className="w-full bg-forge-card border-b border-forge-border px-4 py-2 flex items-center justify-between text-forge-text text-sm">
@@ -26,27 +28,13 @@ export default function TopBar() {
         {/* 신격 */}
         <div className="flex items-center gap-1">
           <span>⭐</span>
-          <span className="text-purple-400 font-bold">신격 {divineRank}</span>
-          <div className="w-16 h-2 bg-gray-700 rounded-full overflow-hidden">
-            <div
-              className="h-full bg-purple-500 transition-all duration-500"
-              style={{ width: `${divineRank}%` }}
-            />
-          </div>
+          <span className="text-purple-400 font-bold text-xs">{tierName}</span>
         </div>
 
         {/* 신성력 */}
         <div className="flex items-center gap-1">
           <span>✨</span>
-          <span className="text-blue-400 font-bold">
-            {divinePower}/{maxDivinePower}
-          </span>
-          <div className="w-16 h-2 bg-gray-700 rounded-full overflow-hidden">
-            <div
-              className="h-full bg-blue-500 transition-all duration-500"
-              style={{ width: `${(divinePower / maxDivinePower) * 100}%` }}
-            />
-          </div>
+          <span className="text-blue-400 font-bold">{divinePower.toLocaleString()}</span>
         </div>
       </div>
     </div>

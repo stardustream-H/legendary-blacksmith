@@ -1,8 +1,13 @@
+import { useState } from 'react'
 import { useGameStore } from '../store/gameStore'
 import { GRADE_NAMES, GRADE_COLORS, EQUIPMENT_TYPE_NAMES, MAX_FAILURES_BY_GRADE } from '../types'
 import { canEnhance } from '../systems/enhancementSystem'
+import SanctuaryScreen from './SanctuaryScreen'
+
+type ForgeTab = 'forge' | 'sanctuary'
 
 export default function ForgeScreen() {
+  const [activeTab, setActiveTab] = useState<ForgeTab>('forge')
   const {
     equipment, selectedEquipmentId, selectEquipment, setScreen,
     commissions, commissionEquipmentId,
@@ -47,9 +52,23 @@ export default function ForgeScreen() {
           &larr; 영지로
         </button>
         <h2 className="text-forge-gold text-xl font-bold">대장간</h2>
-        <span className="text-forge-text-dim text-sm">— 장난의 신을 모시는 신전</span>
+        <span className="text-forge-text-dim text-xs hidden sm:block">— 겉은 대장간, 안은 장난의 신전</span>
+        <div className="ml-auto flex gap-1">
+          {(['forge', 'sanctuary'] as ForgeTab[]).map((tab) => (
+            <button
+              key={tab}
+              onClick={() => setActiveTab(tab)}
+              className={`px-3 py-1 rounded text-sm font-bold transition-all ${activeTab === tab ? 'bg-forge-gold text-black' : 'text-forge-text-dim hover:text-forge-text border border-forge-border'}`}
+            >
+              {tab === 'forge' ? '⚒️ 작업' : '🕍 성소'}
+            </button>
+          ))}
+        </div>
       </div>
 
+      {activeTab === 'sanctuary' ? (
+        <SanctuaryScreen />
+      ) : (
       <div className="flex gap-4 flex-1">
         {/* 장비 목록 */}
         <div className="w-64 flex flex-col gap-2">
@@ -246,14 +265,21 @@ export default function ForgeScreen() {
             </>
           ) : (
             <div className="flex-1 flex items-center justify-center">
-              <div className="text-center text-forge-text-dim">
-                <div className="text-4xl mb-3">망치</div>
-                <p>왼쪽에서 장비를 선택하세요</p>
+              <div className="max-w-sm text-center">
+                <div className="text-5xl mb-4">⚒️</div>
+                <h3 className="text-forge-gold font-bold text-lg mb-2">장난의 신을 모시는 신전</h3>
+                <p className="text-forge-text-dim text-sm leading-relaxed">
+                  겉보기엔 평범한 대장간이지만, 이곳은 장난의 신이 깃든 신전이다.<br /><br />
+                  신의 힘을 빌려 장비를 강화하고 수리할 수 있으며,
+                  성소 탭에서 신격을 높여 더 강한 가호를 받을 수 있다.
+                </p>
+                <p className="text-forge-text-dim text-xs mt-4 opacity-60">← 왼쪽에서 장비를 선택하세요</p>
               </div>
             </div>
           )}
         </div>
       </div>
+      )}
     </div>
   )
 }
