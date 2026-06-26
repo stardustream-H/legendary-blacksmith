@@ -1,0 +1,26 @@
+{
+  "name": "전설 속 대장장이",
+  "short_name": "대장장이",
+  "description": "장난의 신의 사도가 되어 영지를 지켜라",
+  "start_url": "/legendary-blacksmith/",
+  "scope": "/legendary-blacksmith/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#1c1917",
+  "theme_color": "#1c1917",
+  "lang": "ko",
+  "icons": [
+    {
+      "src": "/legendary-blacksmith/icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/legendary-blacksmith/icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}

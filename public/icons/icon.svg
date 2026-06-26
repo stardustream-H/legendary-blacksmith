@@ -1,0 +1,30 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <rect width="512" height="512" rx="80" fill="#1c1917"/>
+  <rect width="512" height="512" rx="80" fill="url(#bg)"/>
+  <defs>
+    <radialGradient id="bg" cx="50%" cy="40%" r="60%">
+      <stop offset="0%" stop-color="#292524"/>
+      <stop offset="100%" stop-color="#0c0a09"/>
+    </radialGradient>
+    <radialGradient id="glow" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#f97316" stop-opacity="0.6"/>
+      <stop offset="100%" stop-color="#f97316" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+  <!-- 불꽃 글로우 -->
+  <ellipse cx="256" cy="310" rx="90" ry="50" fill="url(#glow)"/>
+  <!-- 망치 자루 -->
+  <rect x="238" y="220" width="36" height="180" rx="8" fill="#78716c"/>
+  <!-- 망치 헤드 -->
+  <rect x="170" y="140" width="172" height="100" rx="16" fill="#d97706"/>
+  <rect x="178" y="148" width="156" height="84" rx="12" fill="#f59e0b"/>
+  <!-- 망치 헤드 하이라이트 -->
+  <rect x="186" y="154" width="140" height="16" rx="6" fill="#fcd34d" opacity="0.5"/>
+  <!-- 불꽃 이펙트 -->
+  <ellipse cx="256" cy="220" rx="18" ry="10" fill="#fbbf24" opacity="0.8"/>
+  <!-- 별빛/신성력 점 -->
+  <circle cx="170" cy="130" r="5" fill="#93c5fd" opacity="0.8"/>
+  <circle cx="342" cy="125" r="4" fill="#93c5fd" opacity="0.6"/>
+  <circle cx="200" cy="110" r="3" fill="#93c5fd" opacity="0.5"/>
+  <circle cx="310" cy="108" r="3" fill="#93c5fd" opacity="0.5"/>
+</svg>

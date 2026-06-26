@@ -3,11 +3,34 @@
   <head>
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/legendary-blacksmith/favicon.svg" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <title>전설 속 대장장이</title>
+
+    <!-- PWA -->
+    <link rel="manifest" href="/legendary-blacksmith/manifest.json" />
+    <meta name="theme-color" content="#1c1917" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="대장장이" />
+    <link rel="apple-touch-icon" href="/legendary-blacksmith/icons/icon-192.png" />
+
+    <!-- 안드로이드 스플래시/상태바 색상 -->
+    <meta name="msapplication-TileColor" content="#1c1917" />
+    <meta name="msapplication-TileImage" content="/legendary-blacksmith/icons/icon-192.png" />
   </head>
   <body>
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
+    <!-- 서비스워커 등록 -->
+    <script>
+      if ('serviceWorker' in navigator) {
+        window.addEventListener('load', () => {
+          navigator.serviceWorker.register('/legendary-blacksmith/sw.js')
+            .then(reg => console.log('SW 등록 완료:', reg.scope))
+            .catch(err => console.warn('SW 등록 실패:', err))
+        })
+      }
+    </script>
   </body>
 </html>
